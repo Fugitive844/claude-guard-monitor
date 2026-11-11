@@ -36,7 +36,7 @@ func openStore(path string) (*Store, error) {
 		return nil, e
 	}
 	db.SetMaxOpenConns(1)
-	for _, q := range []string{"PRAGMA busy_timeout=3000", "PRAGMA auto_vacuum=INCREMENTAL", "PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL", "PRAGMA wal_autocheckpoint=256", "PRAGMA journal_size_limit=4194304", `CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT, first INTEGER NOT NULL,last INTEGER NOT NULL,src TEXT NOT NULL,dst TEXT NOT NULL,sport INTEGER,dport INTEGER,proto TEXT,family INTEGER,packets INTEGER,bytes INTEGER,domains TEXT,reason TEXT,source TEXT)`, `CREATE INDEX IF NOT EXISTS event_time ON events(last)`, `CREATE INDEX IF NOT EXISTS event_dst ON events(dst,last)`, `CREATE TABLE IF NOT EXISTS samples(id INTEGER PRIMARY KEY,ts INTEGER,epoch TEXT,p4 INTEGER,p6 INTEGER,b4 INTEGER,b6 INTEGER,d4 INTEGER,d6 INTEGER,received INTEGER,lost INTEGER)`, `CREATE INDEX IF NOT EXISTS sample_time ON samples(ts)`, `CREATE TABLE IF NOT EXISTS lifecycle(id INTEGER PRIMARY KEY,ts INTEGER,kind TEXT,message TEXT)`, `CREATE INDEX IF NOT EXISTS lifecycle_time ON lifecycle(ts)`} {
+	for _, q := range []string{"PRAGMA busy_timeout=3000", "PRAGMA auto_vacuum=INCREMENTAL", "PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL", "PRAGMA wal_autocheckpoint=256", "PRAGMA journal_size_limit=4194304", `CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT, first INTEGER NOT NULL,last INTEGER NOT NULL,src TEXT NOT NULL,dst TEXT NOT NULL,sport INTEGER,dport INTEGER,proto TEXT,family INTEGER,packets INTEGER,bytes INTEGER,domains TEXT,reason TEXT,source TEXT)`, `CREATE INDEX IF NOT EXISTS event_time ON events(last)`, `CREATE INDEX IF NOT EXISTS event_dst ON events(dst,last)`, `CREATE TABLE IF NOT EXISTS samples(id INTEGER PRIMARY KEY,ts INTEGER,epoch TEXT,p4 INTEGER,p6 INTEGER,b4 INTEGER,b6 INTEGER,d4 INTEGER,d6 INTEGER,received INTEGER,lost INTEGER)`, `CREATE INDEX IF NOT EXISTS sample_time ON samples(ts)`, `CREATE TABLE IF NOT EXISTS lifecycle(id INTEGER PRIMARY KEY,ts INTEGER,kind TEXT,message TEXT)`, `CREATE INDEX IF NOT EXISTS lifecycle_time ON lifecycle(ts)`, `CREATE TABLE IF NOT EXISTS speed_results(id INTEGER PRIMARY KEY,ts INTEGER NOT NULL,result TEXT NOT NULL)`, `CREATE INDEX IF NOT EXISTS speed_time ON speed_results(ts)`, `CREATE INDEX IF NOT EXISTS speed_node_direction ON speed_results(json_extract(result,'$.node_id'),json_extract(result,'$.direction'),id)`} {
 		if _, e = db.Exec(q); e != nil {
 			db.Close()
 			return nil, e
@@ -124,7 +124,7 @@ func (s *Store) prune(c Config) error {
 	queries := []struct {
 		q string
 		v any
-	}{{"DELETE FROM events WHERE last<?", now - int64(c.DetailDays)*86400000}, {"DELETE FROM samples WHERE ts<?", now - int64(c.StatsDays)*86400000}, {"DELETE FROM lifecycle WHERE ts<?", now - int64(c.StatsDays)*86400000}, {"DELETE FROM events WHERE id < COALESCE((SELECT id FROM events ORDER BY id DESC LIMIT 1 OFFSET 150000),0)", nil}, {"DELETE FROM samples WHERE id < COALESCE((SELECT id FROM samples ORDER BY id DESC LIMIT 1 OFFSET 180000),0)", nil}, {"DELETE FROM lifecycle WHERE id < COALESCE((SELECT id FROM lifecycle ORDER BY id DESC LIMIT 1 OFFSET 10000),0)", nil}}
+	}{{"DELETE FROM speed_results WHERE ts<?", now - int64(c.StatsDays)*86400000}, {"DELETE FROM speed_results WHERE id < COALESCE((SELECT id FROM speed_results ORDER BY id DESC LIMIT 1 OFFSET 10000),0)", nil}, {"DELETE FROM events WHERE last<?", now - int64(c.DetailDays)*86400000}, {"DELETE FROM samples WHERE ts<?", now - int64(c.StatsDays)*86400000}, {"DELETE FROM lifecycle WHERE ts<?", now - int64(c.StatsDays)*86400000}, {"DELETE FROM events WHERE id < COALESCE((SELECT id FROM events ORDER BY id DESC LIMIT 1 OFFSET 150000),0)", nil}, {"DELETE FROM samples WHERE id < COALESCE((SELECT id FROM samples ORDER BY id DESC LIMIT 1 OFFSET 180000),0)", nil}, {"DELETE FROM lifecycle WHERE id < COALESCE((SELECT id FROM lifecycle ORDER BY id DESC LIMIT 1 OFFSET 10000),0)", nil}}
 	for _, q := range queries {
 		var e error
 		if q.v == nil {
@@ -137,7 +137,7 @@ func (s *Store) prune(c Config) error {
 		}
 	}
 	if s.size() > c.MaxDBMB*1024*1024*8/10 {
-		for _, table := range []string{"events", "samples", "lifecycle"} {
+		for _, table := range []string{"events", "samples", "lifecycle", "speed_results"} {
 			if _, e := s.Exec("DELETE FROM " + table + " WHERE id IN (SELECT id FROM " + table + " ORDER BY id LIMIT (SELECT count(*)/4 FROM " + table + "))"); e != nil {
 				return e
 			}

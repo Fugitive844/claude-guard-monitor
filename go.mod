@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	github.com/florianl/go-nflog/v2 v2.3.0
 	github.com/gorilla/websocket v1.5.3
+	golang.org/x/net v0.62.0
 	modernc.org/sqlite v1.61.1
 )
 
@@ -17,7 +18,6 @@ require (
 	github.com/mdlayher/socket v0.6.0 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	modernc.org/libc v1.79.0 // indirect

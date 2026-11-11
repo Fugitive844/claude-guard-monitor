@@ -84,7 +84,7 @@ func (a *App) handler() http.Handler {
 			a.login(w, r)
 			return
 		}
-		if r.URL.Path == "/" || r.URL.Path == "/app.js" || r.URL.Path == "/style.css" {
+		if r.URL.Path == "/" || r.URL.Path == "/app.js" || r.URL.Path == "/speed.js" || r.URL.Path == "/style.css" {
 			if r.Method != "GET" {
 				w.WriteHeader(405)
 				return
@@ -101,7 +101,7 @@ func (a *App) handler() http.Handler {
 			switch r.URL.Path {
 			case "/":
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			case "/app.js":
+			case "/app.js", "/speed.js":
 				w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 			case "/style.css":
 				w.Header().Set("Content-Type", "text/css; charset=utf-8")
@@ -121,6 +121,8 @@ func (a *App) handler() http.Handler {
 			}
 		}
 		switch r.URL.Path {
+		case "/api/speed/targets", "/api/speed/nodes", "/api/speed/settings", "/api/speed/start", "/api/speed/stop", "/api/speed/status", "/api/speed/history":
+			a.speedAPI(w, r)
 		case "/api/session":
 			respond(w, 200, map[string]any{"csrf": s.CSRF, "expires": s.Expiry.UnixMilli()})
 		case "/api/logout":
@@ -383,7 +385,7 @@ func (a *App) ws(w http.ResponseWriter, r *http.Request, s session) {
 		}
 		v, _ := a.db.events("", 0, 6)
 		c.SetWriteDeadline(time.Now().Add(5 * time.Second))
-		if e = c.WriteJSON(map[string]any{"type": "snapshot", "status": a.getSnapshot(), "events": v}); e != nil {
+		if e = c.WriteJSON(map[string]any{"type": "snapshot", "status": a.getSnapshot(), "events": v, "speed": a.speedStatus()}); e != nil {
 			return
 		}
 		select {

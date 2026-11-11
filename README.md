@@ -74,6 +74,22 @@ syslog 子进程使用 UTC，按日志服务时间入库，精度为秒，并过
 - 详细事件保留 7 天、最多 150,000 行；统计保留上限 30 天、最多 180,000 行；时间线最多 10,000 行。
 - 数据库默认 100 MiB 软阈值，达到阈值后暂停详细事件写入。
 
+### 节点测速
+
+列表显示节点的服务器域名或 IP，支持主机搜索和分组内排序：默认按节点名称，可切换为按协议（再按传输方式）或按主机；同类再按节点名称自然排序。主机使用 PassWall 中配置的地址，不额外解析 DNS。单节点测速按钮在任务运行时变为“停止”，停止当前任务及其剩余队列。
+
+批量测速在启动时按列表相同的分组与排序规则排列所选节点，不按勾选先后排列。筛选隐藏的已选节点仍参与批量任务；任务启动后改变列表排序不会重排正在运行的队列。
+
+“节点测速”读取 PassWall UCI 节点列表及 `group` 分组，支持分组筛选、折叠、整组选择、组内测速，以及单个或勾选批量下载、上传、双向测速。分组按钮作用于当前筛选结果中的可测节点。任务逐节点运行，每个节点先下载再上传，可随时停止。进度通过 WebSocket 推送，SQLite 保存结果；节点列表展示保留期内每个方向最近一次测速结果及时间，工具栏和表头随滚动固定。历史支持节点与时间范围筛选、游标分页，每页 50 条，保留期限沿用 `stats_days`，最多 10,000 行。
+
+测速调用路由器已有的 PassWall Lua 出站生成器，读取普通 Xray / Sing-box 节点参数，在私有临时目录生成配置并启动独立核心。临时 SOCKS 入口仅监听回环地址并启用随机认证；HTTP 请求通过该 SOCKS 出口发送，目标域名交给代理核心处理。出站使用 PassWall 的 `255` 绕过标记。任务结束后清理进程与临时配置。分流、负载均衡、链式配置及不支持的核心会在列表显示原因。
+
+默认使用 [Cloudflare Speedtest](https://github.com/cloudflare/speedtest) 的 `__down` 与 `__up` 接口。每方向默认 10 秒，下载最多 100 MiB、上传最多 50 MiB；速度以有效字节数除以包含连接和等待的耗时计算。Cloudflare 下载分为最多 8 MiB 的请求；公共目标上传使用递增至 4 MiB 的 POST 请求，仅计入成功响应的数据；时限内未确认的上传不计入有效传输。下载达到时限时保留已接收样本。结果是软路由经该节点到目标的单连接吞吐，受本地线路、代理核心、节点和目标接入地区共同影响。
+
+公共目标还包括 [Hetzner 美国 Ashburn](https://ash-speed.hetzner.com/)、[德国 Falkenstein](https://fsn1-speed.hetzner.com/) 和 [OVHcloud](https://proof.ovh.net/) 法国 Roubaix、新加坡、美国 Hillsboro 的测速接口。Hetzner 支持下载，OVHcloud 支持下载与上传。下载和上传目标可独立选择；上传列表仅显示支持上传的目标。公共目标可能限速、变更或暂时不可用，HTTP 错误记录为测速失败。
+
+测速设置独立保存在配置目录的 `speedtest.json`。自定义目标支持 HTTPS 下载地址、上传地址与 PUT / POST；可填入 OSS 预签名 URL。下载按设置上限读取，上传发送指定大小的 `application/octet-stream` 请求体。PUT 应使用专用测速对象，批量任务会重复写入同一对象。历史仅保存目标主机名，预签名查询参数保存在权限为 `0600` 的设置文件中。
+
 ## 代码结构
 
 | 路径 | 职责 |
@@ -86,6 +102,8 @@ syslog 子进程使用 UTC，按日志服务时间入库，精度为秒，并过
 | `packet.go` | IP 数据包头解析 |
 | `store.go` | SQLite、分页查询、聚合与清理 |
 | `lifecycle.go` | 守卫渲染、安装、备份、恢复与服务操作 |
+| `speed.go` / `speed_api.go` | 测速任务、临时核心、传输测量、设置与历史 API |
+| `bundle/speed.lua` | PassWall 节点读取与临时出站配置生成 |
 | `bundle/` | Lua 守卫、PCAP 观察器、SNI 解析及 procd 脚本 |
 | `web/` | HTML、CSS、JavaScript 控制台 |
 | `deploy/` | 引导安装脚本与 Go procd 服务 |
@@ -134,6 +152,7 @@ sh install.sh 192.168.10.1:9088 127.0.0.1/32,::1/128,192.168.10.0/24
 | 路径 | 内容 |
 | --- | --- |
 | `/etc/claude-guard-monitor/config.json` | 监听地址、管理网段、密码哈希、日志后端、存储策略、守卫参数 |
+| `/etc/claude-guard-monitor/speedtest.json` | 测速目标、传输时限、流量上限与自定义 URL |
 | `/etc/claude-guard-monitor/server.crt` / `server.key` | TLS 证书与私钥 |
 | `/overlay/claude-guard-monitor/monitor.db` | SQLite 数据库 |
 | `/overlay/claude-guard-monitor/backup-*.zip` | 守卫安装/卸载备份 |

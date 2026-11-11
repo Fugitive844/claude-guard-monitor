@@ -28,7 +28,7 @@ import (
 	"time"
 )
 
-const version = "1.1.1"
+const version = "1.2.5"
 
 type GuardConfig struct {
 	DNSIP       string   `json:"dns_ip"`
@@ -173,6 +173,7 @@ type App struct {
 	ctx            context.Context
 	lifeMu         sync.Mutex
 	op             string
+	speed          *SpeedService
 }
 
 func main() {
@@ -273,6 +274,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	a := &App{cfg: c, configPath: *path, demo: *demo, db: db, sessions: map[string]session{}, loginAttempts: map[string]time.Time{}, events: make(chan Event, 4096), ctx: ctx, collectorState: "starting"}
+	a.speed = newSpeedService(a)
 	a.logBackend = selectLogBackend(c.LogBackend)
 	if !*demo {
 		if e = ensureCertificate(filepath.Dir(*path), c.Listen); e != nil {
@@ -286,6 +288,7 @@ func main() {
 	a.audit("monitor_start", "监控服务启动 "+version)
 	e = a.serve()
 	cancel()
+	a.speed.wait()
 	<-writerDone
 	if e != nil {
 		log.Print(e)
