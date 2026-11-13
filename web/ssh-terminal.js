@@ -2,6 +2,7 @@
 let sshTerminal=null,sshTerminalFit=null,sshTerminalSocket=null,sshTerminalHost=null,sshTerminalObserver=null;
 function fitSSHTerminal(){if(sshTerminalFit&&view==='ssh'&&$('sshTerminalPanel').open)sshTerminalFit.fit()}
 function disposeSSHTerminal(){
+	ipPrivacy.attachTerminal(null);
  const socket=sshTerminalSocket;sshTerminalSocket=null;if(socket)socket.close();
  sshTerminalObserver?.disconnect();sshTerminalObserver=null;
  sshTerminal?.dispose();sshTerminal=null;sshTerminalFit=null;
@@ -11,7 +12,7 @@ $('sshTerminalPanel').addEventListener('close',disposeSSHTerminal);
 function openSSHTerminal(host){
  if(sshTerminalSocket&&sshTerminalSocket.readyState<2&&!confirm('打开此终端会断开当前终端，继续？'))return;
  disposeSSHTerminal();sshTerminalHost=host.id;
- showSSHDialog('sshTerminalPanel',host.id,'terminal');$('sshTerminalTitle').textContent=`远程终端 · ${host.name} · ${host.username}@${host.host}:${host.port}`;
+ showSSHDialog('sshTerminalPanel',host.id,'terminal');$('sshTerminalTitle').textContent=`远程终端 · ${host.name} · ${host.username}@${sshAddress(host)}`;
  $('sshTerminalStatus').textContent='正在连接…';$('sshTerminalReconnect').disabled=true;
  const term=new Terminal({cursorBlink:true,fontSize:14,fontFamily:'Consolas, "Courier New", monospace',scrollback:3000,theme:{background:'#111b2b',foreground:'#e2e8f0'}});
  const fit=new FitAddon.FitAddon();term.loadAddon(fit);term.open($('sshTerminalScreen'));fit.fit();
@@ -28,7 +29,8 @@ function openSSHTerminal(host){
   }
   return true;
  });
- sshTerminal=term;sshTerminalFit=fit;
+ sshTerminal=term;sshTerminalFit=fit;ipPrivacy.attachTerminal(term);
+ term.onRender(ipPrivacy.renderTerminal);term.onScroll(ipPrivacy.renderTerminal);
  const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/api/ssh/terminal');ws.binaryType='arraybuffer';sshTerminalSocket=ws;
  let ready=false,error='';
  const send=m=>{if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(m))};

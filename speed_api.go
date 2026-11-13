@@ -99,6 +99,21 @@ func (a *App) speedAPI(w http.ResponseWriter, r *http.Request) {
 			respond(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
+		if r.URL.Query().Get("grouped") == "1" {
+			groups, err := a.db.speedHistoryGroups(from, to, before, r.URL.Query().Get("node_id"), r.URL.Query().Get("scope"))
+			if err != nil {
+				respond(w, 500, map[string]string{"error": "读取测速历史失败"})
+				return
+			}
+			more := len(groups) > 50
+			var next int64
+			if more {
+				groups = groups[:50]
+				next = groups[49].ID
+			}
+			respond(w, 200, map[string]any{"items": groups, "has_more": more, "next_before": next})
+			return
+		}
 		items, err := a.db.speedHistory(from, to, before, r.URL.Query().Get("node_id"), r.URL.Query().Get("scope"))
 		if err != nil {
 			respond(w, 500, map[string]string{"error": "读取测速历史失败"})
@@ -133,8 +148,14 @@ func (s *Store) speedHistory(from, to, before int64, nodeID string, scope ...str
 	if before == 0 {
 		before = 1 << 62
 	}
-	query := "SELECT id,result FROM speed_results WHERE ts>=? AND ts<? AND id<?"
-	args := []any{from, to, before}
+	query, args := speedHistoryFilter(from, to, nodeID, scope...)
+	args = append(args, before)
+	return s.querySpeed("SELECT id,result FROM speed_results"+query+" AND id<? ORDER BY id DESC LIMIT 51", args...)
+}
+
+func speedHistoryFilter(from, to int64, nodeID string, scope ...string) (string, []any) {
+	query := " WHERE ts>=? AND ts<?"
+	args := []any{from, to}
 	if nodeID != "" {
 		if strings.HasPrefix(nodeID, "ssh:") {
 			query += " AND (json_extract(result,'$.node_id')=? OR json_extract(result,'$.source_host_id')=?)"
@@ -152,7 +173,48 @@ func (s *Store) speedHistory(from, to, before int64, nodeID string, scope ...str
 			query += " AND json_extract(result,'$.node_id') NOT LIKE 'ssh:%'"
 		}
 	}
-	return s.querySpeed(query+" ORDER BY id DESC LIMIT 51", args...)
+	return query, args
+}
+
+type speedHistoryGroup struct {
+	ID    int64         `json:"id"`
+	Items []SpeedResult `json:"items"`
+}
+
+func (s *Store) speedHistoryGroups(from, to, before int64, nodeID, scope string) ([]speedHistoryGroup, error) {
+	if before == 0 {
+		before = 1 << 62
+	}
+	filter, args := speedHistoryFilter(from, to, nodeID, scope)
+	// Missing job identifiers stay separate; timestamps cannot establish a round.
+	key := `json_array(COALESCE(NULLIF(json_extract(result,'$.job'),''),id),json_extract(result,'$.node_id'),COALESCE(json_extract(result,'$.source_host_id'),''),COALESCE(json_extract(result,'$.mode'),''),COALESCE(json_extract(result,'$.protocol'),''),COALESCE(json_extract(result,'$.test_config.port'),0))`
+	query := `WITH eligible AS (SELECT id,result,` + key + ` AS round_key FROM speed_results` + filter + `),
+ selected AS (SELECT round_key,MAX(id) AS last_id FROM eligible GROUP BY round_key HAVING MAX(id)<? ORDER BY last_id DESC LIMIT 51)
+ SELECT e.id,e.result,g.last_id FROM eligible e JOIN selected g ON e.round_key=g.round_key ORDER BY g.last_id DESC,e.id DESC`
+	rows, err := s.Query(query, append(args, before)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	groups := []speedHistoryGroup{}
+	for rows.Next() {
+		var r SpeedResult
+		var id, groupID int64
+		var raw string
+		if err = rows.Scan(&id, &raw, &groupID); err != nil {
+			return nil, err
+		}
+		if err = json.Unmarshal([]byte(raw), &r); err != nil {
+			return nil, err
+		}
+		r.ID = id
+		if len(groups) == 0 || groups[len(groups)-1].ID != groupID {
+			groups = append(groups, speedHistoryGroup{ID: groupID, Items: []SpeedResult{}})
+		}
+		g := &groups[len(groups)-1]
+		g.Items = append(g.Items, r)
+	}
+	return groups, rows.Err()
 }
 
 func (s *Store) latestSpeed(nodes []SpeedNode, measuredOnly bool) ([]SpeedResult, error) {

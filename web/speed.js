@@ -139,14 +139,22 @@ function showSpeedCustom(){const f=$('speedSettings').elements;$('speedCustom').
 $('speedSettings').elements.target.onchange=showSpeedCustom;
 $('speedSettings').elements.upload_target.onchange=showSpeedCustom;
 $('speedSettings').onsubmit=async e=>{e.preventDefault();const cfg=Object.fromEntries(new FormData(e.target));for(const k of ['seconds','download_mib','upload_mib'])cfg[k]=Number(cfg[k]);try{await api('/api/speed/settings',{method:'POST',body:JSON.stringify(cfg)});$('speedTarget').value=cfg.target;$('speedUploadTarget').value=cfg.upload_target;toast('测速设置已保存，下次任务生效')}catch(e){toast(e.message)}};
+function speedHistoryRow(group,scope){
+ const items=group.items,r=items[0],down=items.find(x=>x.direction==='download'),up=items.find(x=>x.direction==='upload');
+ const cell=x=>x?`${speedCell(x,false)}<small>${esc(bytes(x.bytes))} · ${Number(x.seconds||0).toFixed(2)} 秒</small><small>${esc(scope==='ssh'?sshFlow(x):x.target||'')}</small>`:'<span class="muted">本轮未测试</span>';
+ const name=r.source_host_name?`${r.source_host_name} ↔ ${r.node_name}`:r.node_name;
+ const detail=scope==='ssh'?[r.mode,r.protocol?.toUpperCase(),r.test_config?.port?`端口 ${r.test_config.port}`:''].filter(Boolean).join(' · '):'';
+ const operation=!down&&!up;
+ return `<tr><td>${esc(when(Math.min(...items.map(x=>x.time))))}</td><td class="speed-name">${esc(name)}${detail?`<small>${esc(detail)}</small>`:''}</td>${operation?`<td colspan="2">${esc(speedResultDirection(r))} · ${speedCell(r,false)}</td>`:`<td>${cell(down)}</td><td>${cell(up)}</td>`}</tr>`;
+}
 function createSpeedHistory(prefix,scope){
  let cursorsStack=[0],nextCursor=0,savedBounds=null,busy=false,queryID=0;
 async function load(reset=true,direction=''){
  if(busy&&!reset)return;const bounds=reset||!savedBounds?{...rangeDates(prefix),node:$(prefix+'Node').value}:savedBounds;const query=++queryID;
  const cursors=reset?[0]:[...cursorsStack];if(direction==='next')cursors.push(nextCursor);if(direction==='prev'&&cursors.length>1)cursors.pop();
  busy=true;
- try{const page=await api(`/api/speed/history?scope=${scope}&from=${bounds.from}&to=${bounds.to}&before=${cursors.at(-1)}&node_id=${encodeURIComponent(bounds.node)}`);if(query!==queryID)return;savedBounds=bounds;cursorsStack=cursors;nextCursor=page.next_before;
- $(prefix+'Rows').innerHTML=page.items.length?page.items.map(r=>`<tr><td>${esc(when(r.time))}</td><td class="speed-name">${esc(r.node_name)}<small>${esc(r.target)}${r.edge?' · '+esc(r.edge.split('-').at(-1)):''}</small></td><td>${speedDirectionBadge(r)}</td><td>${speedCell(r,false)}</td><td>${esc(bytes(r.bytes))}<small>${Number(r.seconds).toFixed(2)} 秒</small></td></tr>`).join(''):'<tr><td colspan="5" class="empty">所选时间范围内暂无测速记录</td></tr>';
+ try{const page=await api(`/api/speed/history?grouped=1&scope=${scope}&from=${bounds.from}&to=${bounds.to}&before=${cursors.at(-1)}&node_id=${encodeURIComponent(bounds.node)}`);if(query!==queryID)return;savedBounds=bounds;cursorsStack=cursors;nextCursor=page.next_before;
+ $(prefix+'Rows').innerHTML=page.items.length?page.items.map(g=>speedHistoryRow(g,scope)).join(''):'<tr><td colspan="4" class="empty">所选时间范围内暂无测速记录</td></tr>';
  $(prefix+'Prev').disabled=cursors.length===1;$(prefix+'Next').disabled=!page.has_more;$(prefix+'Page').textContent=`第 ${cursors.length} 页 · 本页 ${page.items.length} 条`;
  }finally{if(query===queryID)busy=false}
 }

@@ -260,6 +260,15 @@ func TestLoginOriginAndCSRF(t *testing.T) {
 func TestConsolePageRoutes(t *testing.T) {
 	a := testApp(t)
 	h := a.handler()
+	for _, path := range []string{"/privacy.js", "/app.js", "/speed.js", "/ssh-speed.js", "/ssh-details.js", "/ssh-terminal.js"} {
+		r := httptest.NewRequest("GET", "http://guard.test"+path, nil)
+		r.RemoteAddr = "127.0.0.1:1234"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), "javascript") {
+			t.Fatalf("console script %s unavailable: %d", path, w.Code)
+		}
+	}
 	for _, path := range []string{"/", "/overview", "/blocks", "/timeline", "/speed", "/speed-history", "/ssh", "/manage"} {
 		t.Run(path, func(t *testing.T) {
 			r := httptest.NewRequest("GET", "http://guard.test"+path, nil)

@@ -89,7 +89,7 @@ func (a *App) handler() http.Handler {
 		case "/", "/overview", "/blocks", "/timeline", "/speed", "/speed-history", "/ssh", "/manage":
 			pageRoute = true
 		}
-		if pageRoute || r.URL.Path == "/app.js" || r.URL.Path == "/speed.js" || r.URL.Path == "/ssh-speed.js" || r.URL.Path == "/ssh-details.js" || r.URL.Path == "/style.css" || r.URL.Path == "/ssh-terminal.js" || r.URL.Path == "/vendor/xterm.js" || r.URL.Path == "/vendor/addon-fit.js" || r.URL.Path == "/vendor/xterm.css" {
+		if pageRoute || r.URL.Path == "/app.js" || r.URL.Path == "/privacy.js" || r.URL.Path == "/speed.js" || r.URL.Path == "/ssh-speed.js" || r.URL.Path == "/ssh-details.js" || r.URL.Path == "/style.css" || r.URL.Path == "/ssh-terminal.js" || r.URL.Path == "/vendor/xterm.js" || r.URL.Path == "/vendor/addon-fit.js" || r.URL.Path == "/vendor/xterm.css" {
 			if r.Method != "GET" {
 				w.WriteHeader(405)
 				return

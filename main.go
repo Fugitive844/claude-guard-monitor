@@ -28,7 +28,7 @@ import (
 	"time"
 )
 
-const version = "1.2.8"
+const version = "1.2.9"
 
 type GuardConfig struct {
 	DNSIP       string   `json:"dns_ip"`

@@ -1,5 +1,6 @@
 'use strict';
 let sshHosts=[];
+function sshAddress(h){return (h.host.includes(':')?'['+h.host+']':h.host)+':'+h.port}
 let sshSaving=false,sshEditorTrigger=null,sshEditorHostID='';
 let sshCheckController=null;
 const sshCollator=new Intl.Collator('zh-CN',{numeric:true,sensitivity:'base'});
@@ -17,9 +18,9 @@ async function loadSSHHosts(){
  const selected=$('sshHost').value,source=$('sshSourceHost').value;
  const data=await api('/api/speed/ssh/hosts');sshHosts=(data.items||[]).sort((a,b)=>sshCollator.compare(a.name,b.name));
  for(const r of data.latest||[])rememberMeasuredSpeed(r);
- $('sshHost').innerHTML='<option value="">请选择主机</option>'+sshHosts.map(h=>`<option value="${esc(h.id)}" ${h.has_secret?'':'disabled'}>${esc(h.name)} · ${esc(h.host)}:${h.port}${h.has_secret?'':' · 待补凭据'}</option>`).join('');
+ $('sshHost').innerHTML='<option value="">请选择主机</option>'+sshHosts.map(h=>`<option value="${esc(h.id)}" ${h.has_secret?'':'disabled'}>${esc(h.name)} · ${esc(sshAddress(h))}${h.has_secret?'':' · 待补凭据'}</option>`).join('');
  $('sshHost').value=sshHosts.some(h=>h.id===selected&&h.has_secret)?selected:sshHosts.find(h=>h.has_secret)?.id||'';
- $('sshSourceHost').innerHTML='<option value="">请选择源主机</option>'+sshHosts.filter(h=>h.has_secret).map(h=>`<option value="${esc(h.id)}">${esc(h.name)} · ${esc(h.host)}:${h.port}</option>`).join('');
+ $('sshSourceHost').innerHTML='<option value="">请选择源主机</option>'+sshHosts.filter(h=>h.has_secret).map(h=>`<option value="${esc(h.id)}">${esc(h.name)} · ${esc(sshAddress(h))}</option>`).join('');
  $('sshSourceHost').value=sshHosts.some(h=>h.id===source&&h.has_secret)?source:'';
  renderSSHHistoryNodes();
  renderSSHHosts();renderSSHButtons();updateSSHTestTitle();
@@ -28,7 +29,7 @@ function renderSSHHosts(){
  const query=$('sshSearch').value.trim().toLowerCase(),status=$('sshCredentialFilter').value;
  const hosts=sshHosts.filter(h=>(!status||(status==='ready')===!!h.has_secret)&&`${h.name} ${h.host} ${h.port} ${h.username}`.toLowerCase().includes(query));
  $('sshHostCount').textContent=`${hosts.length} / ${sshHosts.length} 台主机 · ${sshHosts.filter(h=>!h.has_secret).length} 台待补凭据`;
- $('sshHostRows').innerHTML=hosts.length?hosts.map(h=>`<tr><td class="speed-name">${esc(h.name)}</td><td>${esc(h.host)}</td><td>${h.port}</td><td>${esc(h.username)}</td><td>${h.auth==='key'?'私钥':'密码'}</td><td><span class="badge ${h.has_secret?'':'muted'}">${h.has_secret?'已配置':h.auth==='key'?'待补私钥':'待补密码'}</span></td><td class="ssh-row-actions"><button class="secondary" data-ssh-terminal="${esc(h.id)}">终端</button><button class="secondary" data-ssh-speed="${esc(h.id)}">测试</button><button class="ghost" data-ssh-edit="${esc(h.id)}">${h.has_secret?'编辑':'补充凭据'}</button><select data-ssh-more="${esc(h.id)}" aria-label="${esc(h.name)} 更多操作"><option value="">更多…</option><option value="check" ${h.has_secret?'':'disabled'}>检查连接</option><option value="install" ${h.has_secret?'':'disabled'}>安装 iperf3</option><option value="history">测试记录</option><option value="delete">删除主机</option></select></td></tr>`).join(''):'<tr><td colspan="7" class="empty">没有匹配的 SSH 主机</td></tr>';
+ $('sshHostRows').innerHTML=hosts.length?hosts.map(h=>`<tr><td class="speed-name">${esc(h.name)}</td><td>${esc(h.host)}</td><td data-ssh-port>${h.port}</td><td>${esc(h.username)}</td><td>${h.auth==='key'?'私钥':'密码'}</td><td><span class="badge ${h.has_secret?'':'muted'}">${h.has_secret?'已配置':h.auth==='key'?'待补私钥':'待补密码'}</span></td><td class="ssh-row-actions"><button class="secondary" data-ssh-terminal="${esc(h.id)}">终端</button><button class="secondary" data-ssh-speed="${esc(h.id)}">测试</button><button class="ghost" data-ssh-edit="${esc(h.id)}">${h.has_secret?'编辑':'补充凭据'}</button><select data-ssh-more="${esc(h.id)}" aria-label="${esc(h.name)} 更多操作"><option value="">更多…</option><option value="check" ${h.has_secret?'':'disabled'}>检查连接</option><option value="install" ${h.has_secret?'':'disabled'}>安装 iperf3</option><option value="history">测试记录</option><option value="delete">删除主机</option></select></td></tr>`).join(''):'<tr><td colspan="7" class="empty">没有匹配的 SSH 主机</td></tr>';
  renderSSHButtons();
 }
 function renderSSHButtons(){
@@ -153,7 +154,7 @@ async function sshHostAction(action,id){
   openSSHTest(host.id);await startSSH(action,host.id);
  }catch(e){if($('sshTestPanel').open)showSSHTestError(e);else toast(e.message)}
 }
-function updateSSHTestTitle(){const host=sshHosts.find(h=>h.id===$('sshHost').value);$('sshTestTitle').textContent=host?'SSH 测试 · '+host.name+' · '+host.host+':'+host.port:'SSH 主机直连测速'}
+function updateSSHTestTitle(){const host=sshHosts.find(h=>h.id===$('sshHost').value);$('sshTestTitle').textContent=host?'SSH 测试 · '+host.name+' · '+sshAddress(host):'SSH 主机直连测速'}
 async function startSSH(mode,hostID=$('sshHost').value){
  $('sshTestError').hidden=true;
  const req={host_id:hostID,source_host_id:mode==='iperf3'&&$('sshLink').value==='peer'?$('sshSourceHost').value:'',mode,protocol:$('sshProtocol').value,direction:$('sshDirection').value,port:Number($('sshTestPort').value),seconds:Number($('sshSeconds').value),bandwidth:Number($('sshBandwidth').value),parallel:Number($('sshParallel').value),omit:Number($('sshOmit').value),tcp_bandwidth:Number($('sshTCPBandwidth').value),udp_length:Number($('sshUDPLength').value)};
