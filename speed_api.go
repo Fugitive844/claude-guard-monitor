@@ -33,12 +33,17 @@ func (a *App) speedAPI(w http.ResponseWriter, r *http.Request) {
 			respond(w, 503, map[string]string{"error": err.Error()})
 			return
 		}
-		latest, err := a.db.latestSpeed(v)
+		latest, err := a.db.latestSpeed(v, false)
 		if err != nil {
 			respond(w, 500, map[string]string{"error": "读取最近测速结果失败"})
 			return
 		}
-		respond(w, 200, map[string]any{"items": v, "latest": latest})
+		previous, err := a.db.latestSpeed(v, true)
+		if err != nil {
+			respond(w, 500, map[string]string{"error": "读取有效测速结果失败"})
+			return
+		}
+		respond(w, 200, map[string]any{"items": v, "latest": latest, "previous": previous})
 	case "/api/speed/settings":
 		if r.Method == "GET" {
 			s.mu.Lock()
@@ -150,7 +155,7 @@ func (s *Store) speedHistory(from, to, before int64, nodeID string, scope ...str
 	return s.querySpeed(query+" ORDER BY id DESC LIMIT 51", args...)
 }
 
-func (s *Store) latestSpeed(nodes []SpeedNode) ([]SpeedResult, error) {
+func (s *Store) latestSpeed(nodes []SpeedNode, measuredOnly bool) ([]SpeedResult, error) {
 	if len(nodes) == 0 {
 		return []SpeedResult{}, nil
 	}
@@ -158,7 +163,12 @@ func (s *Store) latestSpeed(nodes []SpeedNode) ([]SpeedResult, error) {
 	for i, node := range nodes {
 		args[i] = node.ID
 	}
-	query := "SELECT id,result FROM speed_results WHERE id IN (SELECT MAX(id) FROM speed_results WHERE json_extract(result,'$.node_id') IN (" + strings.TrimSuffix(strings.Repeat("?,", len(nodes)), ",") + ") GROUP BY json_extract(result,'$.node_id'),json_extract(result,'$.direction'))"
+	filter, group := "", "json_extract(result,'$.node_id'),json_extract(result,'$.direction')"
+	if measuredOnly {
+		filter = " AND json_extract(result,'$.direction') IN ('download','upload') AND (json_extract(result,'$.status') IN ('complete','limited') OR (json_extract(result,'$.status')='cancelled' AND json_extract(result,'$.bytes')>0 AND json_extract(result,'$.seconds')>0))"
+		group += ",COALESCE(json_extract(result,'$.source_host_id'),''),COALESCE(json_extract(result,'$.mode'),''),COALESCE(json_extract(result,'$.protocol'),''),COALESCE(json_extract(result,'$.test_config.port'),0)"
+	}
+	query := "SELECT id,result FROM speed_results WHERE id IN (SELECT MAX(id) FROM speed_results WHERE json_extract(result,'$.node_id') IN (" + strings.TrimSuffix(strings.Repeat("?,", len(nodes)), ",") + ")" + filter + " GROUP BY " + group + ")"
 	return s.querySpeed(query, args...)
 }
 

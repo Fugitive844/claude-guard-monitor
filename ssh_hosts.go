@@ -176,7 +176,16 @@ func (a *App) sshHostsAPI(w http.ResponseWriter, r *http.Request) {
 		for i := range hosts {
 			hosts[i] = hosts[i].public()
 		}
-		respond(w, 200, map[string]any{"items": hosts})
+		nodes := make([]SpeedNode, len(hosts))
+		for i, h := range hosts {
+			nodes[i].ID = "ssh:" + h.ID
+		}
+		latest, e := a.db.latestSpeed(nodes, true)
+		if e != nil {
+			err = errors.New("读取 SSH 测速结果失败")
+			break
+		}
+		respond(w, 200, map[string]any{"items": hosts, "latest": latest})
 		return
 	case "POST":
 		var h SSHHost

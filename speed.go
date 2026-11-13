@@ -100,6 +100,7 @@ type SpeedResult struct {
 	Bytes          int64            `json:"bytes"`
 	Seconds        float64          `json:"seconds"`
 	Mbps           float64          `json:"mbps"`
+	RateBasis      string           `json:"rate_basis,omitempty"`
 	IntervalMbps   *float64         `json:"interval_mbps,omitempty"`
 	Samples        []SpeedSample    `json:"samples,omitempty"`
 	TestConfig     *SSHSpeedRequest `json:"test_config,omitempty"`
@@ -120,6 +121,8 @@ type SpeedSample struct {
 	Retransmits *int64   `json:"retransmits,omitempty"`
 	JitterMS    *float64 `json:"jitter_ms,omitempty"`
 	LostPercent *float64 `json:"lost_percent,omitempty"`
+	LostPackets *int64   `json:"lost_packets,omitempty"`
+	Packets     *int64   `json:"packets,omitempty"`
 }
 type SpeedState struct {
 	Job      string        `json:"job"`
@@ -443,8 +446,7 @@ func measureSpeed(parent context.Context, client *http.Client, cfg SpeedSettings
 	}
 	switch {
 	case parent.Err() != nil:
-		r.Status = "cancelled"
-		r.Message = "已停止"
+		r = cancelledSpeed(r)
 	case err == nil:
 		r.Status = "complete"
 	case errors.Is(ctx.Err(), context.DeadlineExceeded) && r.Bytes > 0:
@@ -457,7 +459,25 @@ func measureSpeed(parent context.Context, client *http.Client, cfg SpeedSettings
 		r.Status = "error"
 		r.Message = safeSpeedError(err)
 	}
-	if r.Status == "error" || r.Status == "cancelled" {
+	if r.Status == "error" {
+		r.Mbps = 0
+	}
+	return r
+}
+
+func cancelledSpeed(r SpeedResult) SpeedResult {
+	r.Status = "cancelled"
+	r.IntervalMbps = nil
+	r.Message = "尚无有效采样"
+	if r.Bytes > 0 && r.Seconds > 0 {
+		r.Mbps = float64(r.Bytes) * 8 / r.Seconds / 1e6
+		if r.RateBasis == "sender" {
+			r.Message = "停止前发送端平均，未取得接收端确认"
+		} else {
+			r.RateBasis = "receiver"
+			r.Message = "停止前接收端平均"
+		}
+	} else {
 		r.Mbps = 0
 	}
 	return r

@@ -263,8 +263,7 @@ func (s *SpeedService) runSSH(ctx context.Context, host, source SSHHost, req SSH
 				r.Status = "complete"
 			}
 			if ctx.Err() != nil {
-				r.Status = "cancelled"
-				r.Message = "任务已停止"
+				r = cancelledSpeed(r)
 			}
 			if req.Mode == "check" || req.Mode == "install" {
 				r.Seconds = float64(time.Now().UnixMilli()-r.Time) / 1000
@@ -286,6 +285,17 @@ func (s *SpeedService) runSSH(ctx context.Context, host, source SSHHost, req SSH
 type sshSpeedCounter struct{ n atomic.Int64 }
 
 func (c *sshSpeedCounter) Write(p []byte) (int, error) { c.n.Add(int64(len(p))); return len(p), nil }
+
+type sshUploadCounter struct {
+	io.Writer
+	count *sshSpeedCounter
+}
+
+func (w sshUploadCounter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	w.count.n.Add(int64(n))
+	return n, err
+}
 
 type timedSpeedPayload struct {
 	until   time.Time
@@ -309,10 +319,15 @@ func measureSSH(ctx context.Context, client *ssh.Client, req SSHSpeedRequest, cf
 	limit := int64(cfg.DownloadMiB) * 1024 * 1024
 	var count sshSpeedCounter
 	var reply boundedSpeedOutput
+	var upload io.WriteCloser
+	var uploadDone chan struct{}
 	command := ""
 	if r.Direction == "upload" {
 		limit = int64(cfg.UploadMiB) * 1024 * 1024
-		session.Stdin = io.LimitReader(&timedSpeedPayload{until: start.Add(time.Duration(req.Seconds) * time.Second)}, limit)
+		upload, err = session.StdinPipe()
+		if err != nil {
+			return r, errors.New("无法创建 SSH 上传通道")
+		}
 		session.Stdout = &reply
 		command = "LC_ALL=C wc -c"
 	} else {
@@ -321,6 +336,14 @@ func measureSSH(ctx context.Context, client *ssh.Client, req SSHSpeedRequest, cf
 	}
 	if err = session.Start(command); err != nil {
 		return r, errors.New("远端无法启动原生 SSH 测速")
+	}
+	if upload != nil {
+		uploadDone = make(chan struct{})
+		go func() {
+			defer close(uploadDone)
+			defer upload.Close()
+			io.Copy(sshUploadCounter{Writer: upload, count: &count}, io.LimitReader(&timedSpeedPayload{until: start.Add(time.Duration(req.Seconds) * time.Second)}, limit))
+		}()
 	}
 	done := make(chan error, 1)
 	go func() { done <- session.Wait() }()
@@ -355,10 +378,15 @@ loop:
 			update(r)
 		}
 	}
+	if uploadDone != nil {
+		session.Close()
+		<-uploadDone
+	}
 	r.Seconds = time.Since(start).Seconds()
 	r.Bytes = count.n.Load()
 	if r.Direction == "upload" {
 		if err != nil {
+			r.RateBasis = "sender"
 			return r, errors.New("SSH 上传未取得远端接收确认，请缩短上传流量或检查网络")
 		}
 		n, e := strconv.ParseInt(strings.TrimSpace(reply.String()), 10, 64)

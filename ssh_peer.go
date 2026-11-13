@@ -52,10 +52,12 @@ func measurePeerIPerf(ctx context.Context, source, target *ssh.Client, host SSHH
 	session.Stdout = output
 	err = session.Run(peerIPerfCommand(host.Host, req, r))
 	if ctx.Err() != nil {
-		return output.current, ctx.Err()
+		partial, _ := output.result()
+		return partial, ctx.Err()
 	}
 	if err != nil {
-		return output.current, errors.New("主机间 iperf3 测试失败，请检查目标地址、测速端口、防火墙与两端版本；UDP 还需同端口的 TCP 控制连接")
+		partial, _ := output.result()
+		return partial, errors.New("主机间 iperf3 测试失败，请检查目标地址、测速端口、防火墙与两端版本；UDP 还需同端口的 TCP 控制连接")
 	}
 	return output.result()
 }

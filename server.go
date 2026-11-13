@@ -84,13 +84,18 @@ func (a *App) handler() http.Handler {
 			a.login(w, r)
 			return
 		}
-		if r.URL.Path == "/" || r.URL.Path == "/app.js" || r.URL.Path == "/speed.js" || r.URL.Path == "/ssh-speed.js" || r.URL.Path == "/ssh-details.js" || r.URL.Path == "/style.css" || r.URL.Path == "/ssh-terminal.js" || r.URL.Path == "/vendor/xterm.js" || r.URL.Path == "/vendor/addon-fit.js" || r.URL.Path == "/vendor/xterm.css" {
+		pageRoute := false
+		switch r.URL.Path {
+		case "/", "/overview", "/blocks", "/timeline", "/speed", "/speed-history", "/ssh", "/manage":
+			pageRoute = true
+		}
+		if pageRoute || r.URL.Path == "/app.js" || r.URL.Path == "/speed.js" || r.URL.Path == "/ssh-speed.js" || r.URL.Path == "/ssh-details.js" || r.URL.Path == "/style.css" || r.URL.Path == "/ssh-terminal.js" || r.URL.Path == "/vendor/xterm.js" || r.URL.Path == "/vendor/addon-fit.js" || r.URL.Path == "/vendor/xterm.css" {
 			if r.Method != "GET" {
 				w.WriteHeader(405)
 				return
 			}
 			p := "web" + r.URL.Path
-			if r.URL.Path == "/" {
+			if pageRoute {
 				p = "web/index.html"
 			}
 			b, e := assets.ReadFile(p)
@@ -98,12 +103,12 @@ func (a *App) handler() http.Handler {
 				http.NotFound(w, r)
 				return
 			}
-			switch r.URL.Path {
-			case "/":
+			switch {
+			case pageRoute:
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			case "/app.js", "/speed.js", "/ssh-speed.js", "/ssh-details.js", "/ssh-terminal.js", "/vendor/xterm.js", "/vendor/addon-fit.js":
+			case strings.HasSuffix(r.URL.Path, ".js"):
 				w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-			case "/style.css", "/vendor/xterm.css":
+			case strings.HasSuffix(r.URL.Path, ".css"):
 				w.Header().Set("Content-Type", "text/css; charset=utf-8")
 			}
 			_, _ = w.Write(b)

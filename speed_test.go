@@ -154,7 +154,7 @@ func TestLatestSpeedSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	items, err := s.latestSpeed([]SpeedNode{{ID: "a"}, {ID: "b"}, {ID: "untested"}})
+	items, err := s.latestSpeed([]SpeedNode{{ID: "a"}, {ID: "b"}, {ID: "untested"}}, false)
 	if err != nil || len(items) != 3 {
 		t.Fatalf("latest: %+v, %v", items, err)
 	}

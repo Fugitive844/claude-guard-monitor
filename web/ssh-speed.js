@@ -16,6 +16,7 @@ for(const id of ['sshTestPanel','sshTerminalPanel','sshHistoryPanel','sshSamples
 async function loadSSHHosts(){
  const selected=$('sshHost').value,source=$('sshSourceHost').value;
  const data=await api('/api/speed/ssh/hosts');sshHosts=(data.items||[]).sort((a,b)=>sshCollator.compare(a.name,b.name));
+ for(const r of data.latest||[])rememberMeasuredSpeed(r);
  $('sshHost').innerHTML='<option value="">请选择主机</option>'+sshHosts.map(h=>`<option value="${esc(h.id)}" ${h.has_secret?'':'disabled'}>${esc(h.name)} · ${esc(h.host)}:${h.port}${h.has_secret?'':' · 待补凭据'}</option>`).join('');
  $('sshHost').value=sshHosts.some(h=>h.id===selected&&h.has_secret)?selected:sshHosts.find(h=>h.has_secret)?.id||'';
  $('sshSourceHost').innerHTML='<option value="">请选择源主机</option>'+sshHosts.filter(h=>h.has_secret).map(h=>`<option value="${esc(h.id)}">${esc(h.name)} · ${esc(h.host)}:${h.port}</option>`).join('');
@@ -169,10 +170,12 @@ function renderSSHResults(){
  $('sshResultsPanel').hidden=!results.length;
  const groups=new Map();
  for(const r of results){const key=[r.source_host_id||'',r.node_id,r.mode,r.protocol].join('/');if(!groups.has(key))groups.set(key,{host:r});groups.get(key)[r.direction]=r}
+ const previous=(g,direction)=>speedMeasured.get(speedMeasurementKey({...g.host,direction}));
+ const resultCell=(g,direction)=>g[direction]?cell(g[direction]):cell(previous(g,direction),true);
  const peer=results.some(r=>r.source_host_id);
  const anchor=results[0];
  $('sshResultDown').innerHTML=(peer?'↓ 源主机下载':'↓ 下载')+(anchor?`<small>${esc(sshFlow({...anchor,direction:'download'}))}</small>`:'');$('sshResultUp').innerHTML=(peer?'↑ 源主机上传':'↑ 上传')+(anchor?`<small>${esc(sshFlow({...anchor,direction:'upload'}))}</small>`:'');
- const cell=r=>r?speedCell(r,false)+`<small>${esc(bytes(r.bytes))} · ${Number(r.seconds||0).toFixed(2)} 秒</small>`:'—';
- $('sshResultRows').innerHTML=[...groups.values()].map(g=>{const r=g.host,operation=g.check||g.install;return `<tr><td>${esc(r.source_host_name?r.source_host_name+' ↔ '+r.node_name:r.node_name)}<small>${esc(r.source_host_id?r.target.split(' · ').slice(1).join(' · '):r.target)}</small></td>${operation?`<td colspan="2">${esc(speedResultDirection(operation))} · ${cell(operation)}</td>`:`<td>${cell(g.download)}</td><td>${cell(g.upload)}</td>`}</tr>`}).join('');
+ const cell=(r,historical=false)=>r?speedCell(r,false,historical)+`<small>${esc(bytes(r.bytes))} · ${Number(r.seconds||0).toFixed(2)} 秒</small>`:'—';
+ $('sshResultRows').innerHTML=[...groups.values()].map(g=>{const r=g.host,operation=g.check||g.install;return `<tr><td>${esc(r.source_host_name?r.source_host_name+' ↔ '+r.node_name:r.node_name)}<small>${esc(r.source_host_id?r.target.split(' · ').slice(1).join(' · '):r.target)}</small></td>${operation?`<td colspan="2">${esc(speedResultDirection(operation))} · ${cell(operation)}</td>`:`<td>${resultCell(g,'download')}</td><td>${resultCell(g,'upload')}</td>`}</tr>`}).join('');
 }
 function renderSSHHistoryNodes(){const selected=$('sshHistoryNode').value;$('sshHistoryNode').innerHTML='<option value="">全部主机</option>'+sshHosts.map(h=>`<option value="ssh:${esc(h.id)}">${esc(h.name)}</option>`).join('');$('sshHistoryNode').value=sshHosts.some(h=>'ssh:'+h.id===selected)?selected:''}

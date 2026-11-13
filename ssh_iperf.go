@@ -277,7 +277,8 @@ func measureIPerf(ctx context.Context, client *ssh.Client, host SSHHost, req SSH
 		if detail == "" {
 			detail = err.Error()
 		}
-		return out.current, fmt.Errorf("iperf3 测速失败：%s", detail)
+		partial, _ := out.result()
+		return partial, fmt.Errorf("iperf3 测速失败：%s", detail)
 	}
 	return out.result()
 }
@@ -323,6 +324,7 @@ func parseIPerf(b []byte, r SpeedResult) (SpeedResult, error) {
 	r.Seconds = summary.Seconds
 	r.Mbps = summary.Mbps / 1e6
 	r.Status = "complete"
+	r.RateBasis = "receiver"
 	if result.End.Sent != nil {
 		rate := result.End.Sent.Mbps / 1e6
 		r.SenderMbps = &rate

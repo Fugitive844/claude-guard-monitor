@@ -16,7 +16,7 @@ function rememberSSHSamples(state){
  if($('sshSamplesPanel').open)renderSSHSamples();
 }
 function iperfResultMetrics(r){
- if(r.mode!=='iperf3'||!['complete','limited'].includes(r.status))return '';
+ if(r.mode!=='iperf3'||!['complete','limited','cancelled'].includes(r.status))return '';
  const lines=[];
  if(r.sender_mbps!=null)lines.push(`发送端平均 ${Number(r.sender_mbps).toFixed(2)} Mbps`);
  if(r.protocol==='tcp'&&r.retransmits!=null)lines.push(`TCP 重传 ${r.retransmits} 次`);

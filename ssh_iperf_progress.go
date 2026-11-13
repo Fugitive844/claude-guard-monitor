@@ -49,8 +49,29 @@ func (p *iperfProgress) interval(sample SpeedSample) {
 	p.current.Seconds = end
 	p.current.Mbps = float64(p.current.Bytes) * 8 / end / 1e6
 	p.current.IntervalMbps = &rate
+	p.current.RateBasis = "receiver"
+	if p.current.Direction == "upload" {
+		p.current.RateBasis = "sender"
+	}
 	if p.current.SourceHostID == "" {
 		sample.Retransmits = nil
+	}
+	if sample.Retransmits != nil {
+		n := *sample.Retransmits
+		if p.current.Retransmits != nil {
+			n += *p.current.Retransmits
+		}
+		p.current.Retransmits = &n
+	}
+	if sample.Packets != nil && sample.LostPackets != nil {
+		p.current.Packets += *sample.Packets
+		p.current.LostPackets += *sample.LostPackets
+		if p.current.Packets > 0 {
+			p.current.LostPercent = float64(p.current.LostPackets) * 100 / float64(p.current.Packets)
+		}
+	}
+	if sample.JitterMS != nil {
+		p.current.JitterMS = *sample.JitterMS
 	}
 	p.current.Samples = append(p.current.Samples, sample)
 	p.current.Status = "running"
@@ -91,6 +112,8 @@ func (p *iperfProgress) line(line string) {
 					Retransmits *int64   `json:"retransmits"`
 					JitterMS    *float64 `json:"jitter_ms"`
 					LostPercent *float64 `json:"lost_percent"`
+					LostPackets *int64   `json:"lost_packets"`
+					Packets     *int64   `json:"packets"`
 				} `json:"sum"`
 			}
 			if json.Unmarshal(event.Data, &data) == nil {
@@ -100,7 +123,7 @@ func (p *iperfProgress) line(line string) {
 					return
 				}
 				s := data.Sum
-				p.interval(SpeedSample{Start: s.Start, End: s.End, Bytes: s.Bytes, Mbps: s.Rate / 1e6, Retransmits: s.Retransmits, JitterMS: s.JitterMS, LostPercent: s.LostPercent})
+				p.interval(SpeedSample{Start: s.Start, End: s.End, Bytes: s.Bytes, Mbps: s.Rate / 1e6, Retransmits: s.Retransmits, JitterMS: s.JitterMS, LostPercent: s.LostPercent, LostPackets: s.LostPackets, Packets: s.Packets})
 			}
 		case "end":
 			if r, err := parseIPerf(append(append([]byte(`{"end":`), event.Data...), '}'), p.current); err == nil {
@@ -155,6 +178,7 @@ func (p *iperfProgress) line(line string) {
 		r.Seconds = end
 		r.Mbps = rate
 		r.Status = "complete"
+		r.RateBasis = "receiver"
 		if loss := iperfTextLoss.FindStringSubmatch(m[6]); loss != nil {
 			r.JitterMS = iperfNumber(loss[1])
 			r.LostPackets = int64(iperfNumber(loss[2]))
@@ -169,6 +193,8 @@ func (p *iperfProgress) line(line string) {
 				jitter, lost := iperfNumber(loss[1]), iperfNumber(loss[4])
 				sample.JitterMS = &jitter
 				sample.LostPercent = &lost
+				lostPackets, packets := int64(iperfNumber(loss[2])), int64(iperfNumber(loss[3]))
+				sample.LostPackets, sample.Packets = &lostPackets, &packets
 			}
 		} else if retrans := iperfTextRetrans.FindStringSubmatch(m[6]); retrans != nil {
 			n := int64(iperfNumber(retrans[1]))

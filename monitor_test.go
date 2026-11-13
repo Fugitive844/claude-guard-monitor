@@ -257,6 +257,28 @@ func TestLoginOriginAndCSRF(t *testing.T) {
 		t.Fatal("non-LAN allowed")
 	}
 }
+func TestConsolePageRoutes(t *testing.T) {
+	a := testApp(t)
+	h := a.handler()
+	for _, path := range []string{"/", "/overview", "/blocks", "/timeline", "/speed", "/speed-history", "/ssh", "/manage"} {
+		t.Run(path, func(t *testing.T) {
+			r := httptest.NewRequest("GET", "http://guard.test"+path, nil)
+			r.RemoteAddr = "127.0.0.1:1234"
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") || !strings.Contains(w.Body.String(), `id="loginForm"`) {
+				t.Fatal("page refresh must load the console shell", w.Code)
+			}
+			r.RemoteAddr = "8.8.8.8:4321"
+			w = httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != 403 {
+				t.Fatal("page route bypassed management network restriction", w.Code)
+			}
+		})
+	}
+}
+
 func TestWebSocketSnapshotAndOrigin(t *testing.T) {
 	a := testApp(t)
 	a.sessions["test-session"] = session{Expiry: time.Now().Add(time.Hour), CSRF: "csrf"}
