@@ -32,7 +32,7 @@ function openSSHTerminal(host){
   return true;
  });
  sshTerminal=term;sshTerminalFit=fit;ipPrivacy.attachTerminal(term);
- term.onRender(ipPrivacy.renderTerminal);term.onScroll(ipPrivacy.renderTerminal);
+ term.onRender(ipPrivacy.renderTerminal);
  const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/api/ssh/terminal');ws.binaryType='arraybuffer';sshTerminalSocket=ws;
  let ready=false,error='';
  const send=m=>{if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(m))};
