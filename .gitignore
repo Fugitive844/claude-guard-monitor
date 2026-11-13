@@ -13,6 +13,8 @@
 *.gz
 *.exe
 /config.json
+/ssh-hosts.json
+/speedtest.json
 /README.local.md
 /家庭部署记录-*.md
 /验收记录-*.md
@@ -22,3 +24,5 @@
 /.publish/
 **/credentials*.txt
 **/*cookie*.txt
+
+/reports/

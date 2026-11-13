@@ -1,12 +1,12 @@
 'use strict';
 let speedTargetsList=[];
-let speedVisibleGroups=[],speedCollapsed=new Set();
+let speedVisibleGroups=[],speedCollapsed=new Set(),speedActiveGroup='';
 let speedNodes=[], speedSelected=new Set(), speedResults=new Map(), speedCurrent={}, speedLoaded=false;
-let speedHistoryCursors=[0],speedHistoryNext=0,speedHistoryBounds=null,speedHistoryBusy=false,speedHistoryQuery=0;
 const speedToolbar=document.querySelector('.speed-toolbar');
 new ResizeObserver(()=>{$('speed').style.setProperty('--speed-toolbar-height',speedToolbar.getBoundingClientRect().height+'px')}).observe(speedToolbar);
 function rememberSpeed(r){const key=r.node_id+'/'+r.direction,old=speedResults.get(key);if(!old||r.time>old.time||(r.time===old.time&&(r.id||0)>=(old.id||0)))speedResults.set(key,r)}
-const speedLabel={starting:'启动核心',running:'测速中',complete:'完成',limited:'时限采样',error:'失败',cancelled:'已停止'};
+const speedLabel={starting:'准备连接',running:'运行中',complete:'完成',limited:'时限采样',error:'失败',cancelled:'已停止'};
+const speedDirectionLabel={download:'下载',upload:'上传',check:'连接检查',install:'安装 iperf3'};
 const speedNodeCollator=new Intl.Collator('zh-CN',{numeric:true,sensitivity:'base'});
 function compareSpeedNodes(a,b){
  const compare=(x,y)=>speedNodeCollator.compare(x||'',y||'');
@@ -24,9 +24,27 @@ function groupedSpeedNodes(nodes){
  const groups=new Map();for(const n of nodes){if(!groups.has(n.group))groups.set(n.group,[]);groups.get(n.group).push(n)}
  return [...groups].map(([name,nodes])=>({name,nodes:nodes.sort(compareSpeedNodes)}));
 }
-function speedRate(r){return r&&['complete','limited','running'].includes(r.status)?Number(r.mbps||0).toFixed(2)+' Mbps':'—'}
-function speedCell(r,showTarget=true){if(!r)return '—';return `<b>${esc(speedRate(r))}</b><small>${esc(speedLabel[r.status]||r.status)}${r.message?' · '+esc(r.message):''}</small>${showTarget?'<small>'+esc(r.target||'')+'</small><small>'+esc(when(r.time))+'</small>':''}`}
-function visibleSpeedNodes(){const q=$('speedSearch').value.toLowerCase(),group=$('speedGroup').value;return speedNodes.filter(n=>(!group||n.group===group)&&(n.name+' '+(n.host||'')+' '+n.group+' '+n.core+' '+n.protocol+' '+n.transport).toLowerCase().includes(q))}
+function speedResultDirection(r){return r.source_host_id&&['download','upload'].includes(r.direction)?(r.direction==='upload'?'源主机上传':'源主机下载'):speedDirectionLabel[r.direction]||r.direction}
+function speedDirectionClass(r){return ['download','upload'].includes(r?.direction)?'speed-'+r.direction:''}
+function speedDirectionBadge(r){return `<span class="speed-direction ${speedDirectionClass(r)}">${esc(speedResultDirection(r))}</span>`}
+function speedRate(r){if(r?.status==='running'&&r.interval_mbps!=null)return Number(r.interval_mbps).toFixed(2)+' Mbps';if(r?.status==='running'&&(r.mode==='iperf3'||r.mode==='ssh'&&r.direction==='upload'))return '等待统计';return r&&['download','upload'].includes(r.direction)&&['complete','limited','running'].includes(r.status)?Number(r.mbps||0).toFixed(2)+' Mbps':'—'}
+function speedCell(r,showTarget=true){if(!r)return '—';return `<b class="${speedDirectionClass(r)}">${esc(speedRate(r))}</b><small>${esc(speedLabel[r.status]||r.status)}${r.message?' · '+esc(r.message):''}${r.mode==='iperf3'&&r.status==='complete'?' · 接收端平均':''}</small>${r.protocol==='udp'&&r.status==='complete'?`<small>丢包 ${Number(r.lost_percent||0).toFixed(2)}% (${r.lost_packets||0}/${r.packets||0}) · 抖动 ${Number(r.jitter_ms||0).toFixed(2)} ms</small>`:''}${iperfResultMetrics(r)}${showTarget?'<small>'+esc(r.target||'')+'</small><small>'+esc(when(r.time))+'</small>':''}`}
+function renderSpeedGroups(){
+ const groups=new Map();for(const n of speedNodes)groups.set(n.group,(groups.get(n.group)||0)+1);
+ if(speedActiveGroup&&!groups.has(speedActiveGroup))speedActiveGroup='';
+ $('speedGroups').innerHTML=[['','全部',speedNodes.length],...[...groups].map(([name,count])=>[name,name,count])].map(([value,label,count])=>`<button type="button" class="speed-group-filter" data-speed-filter="${esc(value)}" aria-pressed="${speedActiveGroup===value}"><span>${esc(label)}</span><small>${count}</small></button>`).join('');
+}
+function visibleSpeedNodes(){const q=$('speedSearch').value.trim().toLowerCase();return speedNodes.filter(n=>(!speedActiveGroup||n.group===speedActiveGroup)&&(n.name+' '+(n.host||'')+' '+n.group+' '+n.core+' '+n.protocol+' '+n.transport).toLowerCase().includes(q))}
+function updateSpeedSelection(){
+ const visible=visibleSpeedNodes(),visibleIDs=new Set(visible.map(n=>n.id));
+ const outside=[...speedSelected].filter(id=>!visibleIDs.has(id)).length;
+ $('speedCount').textContent=`已选 ${speedSelected.size} 个${outside?' · 筛选外 '+outside+' 个':''}`;
+ $('speedVisibleCount').textContent=`显示 ${visible.length} / ${speedNodes.length} 个节点`;
+ $('speedStart').textContent=speedSelected.size?`测速所选 (${speedSelected.size})`:'测速所选节点';
+ $('speedStart').disabled=!!speedCurrent.running||!speedSelected.size;
+ $('speedClear').disabled=!speedSelected.size;
+ $('speedSelectAll').disabled=!visible.some(n=>n.supported&&!speedSelected.has(n.id));
+}
 function updateSpeedNodeButtons(){
  document.querySelectorAll('[data-speed-run]').forEach(b=>{
   const active=!!speedCurrent.running&&b.dataset.speedRun===speedCurrent.current?.node_id;
@@ -44,38 +62,50 @@ function renderSpeedNodes(){
  return header+(collapsed?'':g.nodes.map(n=>`<tr><td><input type="checkbox" aria-label="选择 ${esc(n.name)}" data-speed-select="${esc(n.id)}" ${speedSelected.has(n.id)?'checked':''} ${n.supported?'':'disabled'}></td><td class="speed-name">${esc(n.name)}${n.host?'<small>主机：'+esc(n.host)+'</small>':''}<small>${esc(n.core)} · ${esc(n.protocol)}${n.transport?' / '+esc(n.transport):''}${n.reason?' · '+esc(n.reason):''}</small></td><td data-speed-down="${esc(n.id)}">${speedCell(speedResults.get(n.id+'/download'))}</td><td data-speed-up="${esc(n.id)}">${speedCell(speedResults.get(n.id+'/upload'))}</td><td><button class="secondary" data-speed-run="${esc(n.id)}" ${!n.supported||speedCurrent.running?'disabled':''}>测速</button></td></tr>`).join(''));
  }).join(''):'<tr><td colspan="5" class="empty">没有匹配节点</td></tr>';
  document.querySelectorAll('[data-speed-group-select]').forEach(el=>{const nodes=speedVisibleGroups[Number(el.dataset.speedGroupSelect)].nodes.filter(n=>n.supported),n=nodes.filter(n=>speedSelected.has(n.id)).length;el.indeterminate=n>0&&n<nodes.length});
- $('speedCount').textContent=`已选 ${speedSelected.size} / ${speedNodes.filter(n=>n.supported).length} 个可测节点`;
+ updateSpeedSelection();
  updateSpeedNodeButtons();
 }
 function renderSpeed(state){
- if(!state)return;const previous=speedCurrent;speedCurrent=state;
+ if(!state)return;const previous=speedCurrent;speedCurrent=state;rememberSSHSamples(state);
+ renderSSHButtons();
  for(const result of state.results||[])rememberSpeed(result);
  if(state.current?.direction)rememberSpeed(state.current);
+ if(previous.running&&!state.running){
+  if(view==='speed')loadSpeedHistory().catch(e=>toast(e.message));
+  if(view==='ssh'&&$('sshHistoryPanel').open)loadSSHHistory().catch(e=>toast(e.message));
+  if(state.current?.node_id?.startsWith('ssh:'))loadSSHHosts().catch(e=>toast(e.message));
+ }
  if(!speedLoaded)return;
- $('speedStart').disabled=!!state.running;$('speedStop').disabled=!state.running||state.stopping;
- $('speedJobTitle').textContent=state.running?(state.stopping?'正在停止测速':`${state.current.node_name||'准备中'} · ${state.current.direction==='download'?'下载':state.current.direction==='upload'?'上传':'启动核心'}`):state.finished?'测速任务已结束':'准备测速';
- $('speedProgress').max=state.total||1;$('speedProgress').value=state.done||0;
- $('speedJobDetail').textContent=state.error||`${state.done||0} / ${state.total||0} 项完成 · ${state.current?.target||'批量依次运行'}`;
- $('speedRate').textContent=speedRate(state.current);
- $('speedTransfer').textContent=bytes(state.current?.bytes||0);
- $('speedElapsed').textContent=Number(state.current?.seconds||0).toFixed(1)+' 秒';
+ const isSSH=state.current?.node_id?.startsWith('ssh:');
+ const proxyState=isSSH?{...state,current:{},done:0,total:0,finished:0,error:''}:state;
+ updateSpeedSelection();$('speedStop').disabled=!state.running||state.stopping;
+ if(isSSH)$('speedStop').disabled=true;
+ $('speedJobTitle').textContent=isSSH?(state.running?'SSH 测试正在运行':'准备测速'):state.running?(state.stopping?'正在停止任务':`${state.current.node_name||'准备中'} · ${speedDirectionLabel[state.current.direction]||'准备连接'}`):state.finished?'测速任务已结束':'准备测速';
+ $('speedProgress').max=proxyState.total||1;$('speedProgress').value=proxyState.done||0;
+ $('speedJobDetail').textContent=isSSH?(state.running?'前往 SSH 管理查看进度与结果；完成后可开始代理测试。':'选择节点与测速目标，测量端到端速度。'):state.error||`${state.done||0} / ${state.total||0} 项完成 · ${state.current?.target||'批量依次运行'}${state.current?.message?' · '+state.current.message:''}`;
+ $('speedRate').textContent=speedRate(proxyState.current);
+ $('speedRate').className=speedDirectionClass(proxyState.current);
+ $('speedTransfer').textContent=bytes(proxyState.current?.bytes||0);
+ $('speedElapsed').textContent=Number(proxyState.current?.seconds||0).toFixed(1)+' 秒';
  updateSpeedNodeButtons();
  document.querySelectorAll('[data-speed-group-run]').forEach(b=>b.disabled=!!state.running||!speedVisibleGroups[Number(b.dataset.speedGroupRun)].nodes.some(n=>n.supported));
  for(const [attr,dir] of [['data-speed-down','download'],['data-speed-up','upload']])document.querySelectorAll(`[${attr}]`).forEach(c=>c.innerHTML=speedCell(speedResults.get(c.getAttribute(attr)+'/'+dir)));
- if(previous.running&&!state.running&&view==='speed')loadSpeedHistory().catch(e=>toast(e.message));
 }
+function renderSpeedHistoryNodes(){const selected=$('speedHistoryNode').value;const nodes=speedNodes;$('speedHistoryNode').innerHTML='<option value="">全部节点</option>'+nodes.map(n=>`<option value="${esc(n.id)}">${esc(n.name)}</option>`).join('');$('speedHistoryNode').value=nodes.some(n=>n.id===selected)?selected:''}
 async function loadSpeed(){
  const [nodes,cfg,state,targets]=await Promise.all([api('/api/speed/nodes'),api('/api/speed/settings'),api('/api/speed/status'),api('/api/speed/targets')]); speedTargetsList=targets.items;
  const options=items=>items.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
- $('speedTarget').innerHTML=$('speedSettings').elements.target.innerHTML=options(speedTargetsList);
- $('speedUploadTarget').innerHTML=$('speedSettings').elements.upload_target.innerHTML=options(speedTargetsList.filter(t=>t.upload));
- $('speedTarget').value=cfg.target;$('speedUploadTarget').value=cfg.upload_target;
+ if(!speedLoaded){
+  $('speedTarget').innerHTML=$('speedSettings').elements.target.innerHTML=options(speedTargetsList);
+  $('speedUploadTarget').innerHTML=$('speedSettings').elements.upload_target.innerHTML=options(speedTargetsList.filter(t=>t.upload));
+  $('speedTarget').value=cfg.target;$('speedUploadTarget').value=cfg.upload_target;
+  for(const [k,v] of Object.entries(cfg)){const el=$('speedSettings').elements.namedItem(k);if(el)el.value=v}
+ }
 
  for(const result of nodes.latest||[])rememberSpeed(result);
  speedNodes=(nodes.items||[]).map(n=>({...n,group:n.group||'未分组'}));speedSelected=new Set([...speedSelected].filter(id=>speedNodes.some(n=>n.id===id&&n.supported)));
- const previousGroup=$('speedGroup').value;const groupNames=[...new Set(speedNodes.map(n=>n.group))];$('speedGroup').innerHTML='<option value="">全部分组</option>'+groupNames.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('');$('speedGroup').value=groupNames.includes(previousGroup)?previousGroup:'';
- const historyNode=$('speedHistoryNode').value;$('speedHistoryNode').innerHTML='<option value="">全部节点</option>'+speedNodes.map(n=>`<option value="${esc(n.id)}">${esc(n.name)}</option>`).join('');$('speedHistoryNode').value=speedNodes.some(n=>n.id===historyNode)?historyNode:'';
- for(const [k,v] of Object.entries(cfg)){const el=$('speedSettings').elements.namedItem(k);if(el)el.value=v}
+ renderSpeedGroups();
+ renderSpeedHistoryNodes();
  showSpeedCustom();speedLoaded=true;renderSpeedNodes();renderSpeed(state);await loadSpeedHistory();
 }
 async function startSpeed(ids){
@@ -94,7 +124,7 @@ async function stopSpeed(){
 $('speedStop').onclick=()=>stopSpeed().catch(e=>toast(e.message));
 $('speedRefresh').onclick=()=>loadSpeed().catch(e=>toast(e.message));
 $('speedSearch').oninput=renderSpeedNodes;
-$('speedGroup').onchange=renderSpeedNodes;
+$('speedGroups').onclick=e=>{const button=e.target.closest('[data-speed-filter]');if(!button)return;speedActiveGroup=button.dataset.speedFilter;for(const b of $('speedGroups').querySelectorAll('[data-speed-filter]'))b.setAttribute('aria-pressed',String(b===button));renderSpeedNodes()};
 $('speedSort').onchange=renderSpeedNodes;
 $('speedSelectAll').onclick=()=>{visibleSpeedNodes().filter(n=>n.supported).forEach(n=>speedSelected.add(n.id));renderSpeedNodes()};
 $('speedClear').onclick=()=>{speedSelected.clear();renderSpeedNodes()};
@@ -104,17 +134,24 @@ function showSpeedCustom(){const f=$('speedSettings').elements;$('speedCustom').
 $('speedSettings').elements.target.onchange=showSpeedCustom;
 $('speedSettings').elements.upload_target.onchange=showSpeedCustom;
 $('speedSettings').onsubmit=async e=>{e.preventDefault();const cfg=Object.fromEntries(new FormData(e.target));for(const k of ['seconds','download_mib','upload_mib'])cfg[k]=Number(cfg[k]);try{await api('/api/speed/settings',{method:'POST',body:JSON.stringify(cfg)});$('speedTarget').value=cfg.target;$('speedUploadTarget').value=cfg.upload_target;toast('测速设置已保存，下次任务生效')}catch(e){toast(e.message)}};
-async function loadSpeedHistory(reset=true,direction=''){
- if(speedHistoryBusy&&!reset)return;const bounds=reset||!speedHistoryBounds?{...rangeDates('speedHistory'),node:$('speedHistoryNode').value}:speedHistoryBounds;const query=++speedHistoryQuery;
- const cursors=reset?[0]:[...speedHistoryCursors];if(direction==='next')cursors.push(speedHistoryNext);if(direction==='prev'&&cursors.length>1)cursors.pop();
- speedHistoryBusy=true;
- try{const page=await api(`/api/speed/history?from=${bounds.from}&to=${bounds.to}&before=${cursors.at(-1)}&node_id=${encodeURIComponent(bounds.node)}`);if(query!==speedHistoryQuery)return;speedHistoryBounds=bounds;speedHistoryCursors=cursors;speedHistoryNext=page.next_before;
- $('speedHistoryRows').innerHTML=page.items.length?page.items.map(r=>`<tr><td>${esc(when(r.time))}</td><td class="speed-name">${esc(r.node_name)}<small>${esc(r.target)}${r.edge?' · '+esc(r.edge.split('-').at(-1)):''}</small></td><td>${r.direction==='download'?'下载':'上传'}</td><td>${speedCell(r,false)}</td><td>${esc(bytes(r.bytes))}<small>${Number(r.seconds).toFixed(2)} 秒</small></td></tr>`).join(''):'<tr><td colspan="5" class="empty">所选时间范围内暂无测速记录</td></tr>';
- $('speedHistoryPrev').disabled=cursors.length===1;$('speedHistoryNext').disabled=!page.has_more;$('speedHistoryPage').textContent=`第 ${cursors.length} 页 · 本页 ${page.items.length} 条`;
- }finally{if(query===speedHistoryQuery)speedHistoryBusy=false}
+function createSpeedHistory(prefix,scope){
+ let cursorsStack=[0],nextCursor=0,savedBounds=null,busy=false,queryID=0;
+async function load(reset=true,direction=''){
+ if(busy&&!reset)return;const bounds=reset||!savedBounds?{...rangeDates(prefix),node:$(prefix+'Node').value}:savedBounds;const query=++queryID;
+ const cursors=reset?[0]:[...cursorsStack];if(direction==='next')cursors.push(nextCursor);if(direction==='prev'&&cursors.length>1)cursors.pop();
+ busy=true;
+ try{const page=await api(`/api/speed/history?scope=${scope}&from=${bounds.from}&to=${bounds.to}&before=${cursors.at(-1)}&node_id=${encodeURIComponent(bounds.node)}`);if(query!==queryID)return;savedBounds=bounds;cursorsStack=cursors;nextCursor=page.next_before;
+ $(prefix+'Rows').innerHTML=page.items.length?page.items.map(r=>`<tr><td>${esc(when(r.time))}</td><td class="speed-name">${esc(r.node_name)}<small>${esc(r.target)}${r.edge?' · '+esc(r.edge.split('-').at(-1)):''}</small></td><td>${speedDirectionBadge(r)}</td><td>${speedCell(r,false)}</td><td>${esc(bytes(r.bytes))}<small>${Number(r.seconds).toFixed(2)} 秒</small></td></tr>`).join(''):'<tr><td colspan="5" class="empty">所选时间范围内暂无测速记录</td></tr>';
+ $(prefix+'Prev').disabled=cursors.length===1;$(prefix+'Next').disabled=!page.has_more;$(prefix+'Page').textContent=`第 ${cursors.length} 页 · 本页 ${page.items.length} 条`;
+ }finally{if(query===queryID)busy=false}
 }
-$('speedHistoryNode').onchange=()=>loadSpeedHistory().catch(e=>toast(e.message));
-$('speedHistoryFilters').onsubmit=e=>{e.preventDefault();loadSpeedHistory().catch(e=>toast(e.message))};
-$('speedHistoryPrev').onclick=()=>loadSpeedHistory(false,'prev').catch(e=>toast(e.message));
-$('speedHistoryNext').onclick=()=>loadSpeedHistory(false,'next').catch(e=>toast(e.message));
-$('speedHistoryRange').onchange=()=>{const custom=$('speedHistoryRange').value==='custom';$('speedHistoryFromLabel').hidden=!custom;$('speedHistoryToLabel').hidden=!custom;if(custom&&!$('speedHistoryTo').value){const local=t=>{const d=new Date(t);return new Date(t-d.getTimezoneOffset()*60000).toISOString().slice(0,16)};$('speedHistoryTo').value=local(Date.now());$('speedHistoryFrom').value=local(Date.now()-86400000)}};
+$(prefix+'Node').onchange=()=>load().catch(e=>toast(e.message));
+$(prefix+'Filters').onsubmit=e=>{e.preventDefault();load().catch(e=>toast(e.message))};
+$(prefix+'Prev').onclick=()=>load(false,'prev').catch(e=>toast(e.message));
+$(prefix+'Next').onclick=()=>load(false,'next').catch(e=>toast(e.message));
+$(prefix+'Range').onchange=()=>{const custom=$(prefix+'Range').value==='custom';$(prefix+'FromLabel').hidden=!custom;$(prefix+'ToLabel').hidden=!custom;if(custom&&!$(prefix+'To').value){const local=t=>{const d=new Date(t);return new Date(t-d.getTimezoneOffset()*60000).toISOString().slice(0,16)};$(prefix+'To').value=local(Date.now());$(prefix+'From').value=local(Date.now()-86400000)}};
+
+return load;
+}
+const loadSpeedHistory=createSpeedHistory('speedHistory','proxy');
+const loadSSHHistory=createSpeedHistory('sshHistory','ssh');

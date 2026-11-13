@@ -81,20 +81,45 @@ type SpeedRequest struct {
 	UploadTarget string   `json:"upload_target"`
 }
 type SpeedResult struct {
-	ID         int64   `json:"id"`
-	Time       int64   `json:"time"`
-	Job        string  `json:"job"`
-	NodeID     string  `json:"node_id"`
-	NodeName   string  `json:"node_name"`
-	Direction  string  `json:"direction"`
-	Target     string  `json:"target"`
-	Status     string  `json:"status"`
-	Bytes      int64   `json:"bytes"`
-	Seconds    float64 `json:"seconds"`
-	Mbps       float64 `json:"mbps"`
-	HTTPStatus int     `json:"http_status"`
-	Edge       string  `json:"edge"`
-	Message    string  `json:"message"`
+	Mode           string           `json:"mode,omitempty"`
+	Protocol       string           `json:"protocol,omitempty"`
+	JitterMS       float64          `json:"jitter_ms,omitempty"`
+	LostPackets    int64            `json:"lost_packets,omitempty"`
+	Packets        int64            `json:"packets,omitempty"`
+	LostPercent    float64          `json:"lost_percent,omitempty"`
+	ID             int64            `json:"id"`
+	Time           int64            `json:"time"`
+	Job            string           `json:"job"`
+	NodeID         string           `json:"node_id"`
+	NodeName       string           `json:"node_name"`
+	SourceHostID   string           `json:"source_host_id,omitempty"`
+	SourceHostName string           `json:"source_host_name,omitempty"`
+	Direction      string           `json:"direction"`
+	Target         string           `json:"target"`
+	Status         string           `json:"status"`
+	Bytes          int64            `json:"bytes"`
+	Seconds        float64          `json:"seconds"`
+	Mbps           float64          `json:"mbps"`
+	IntervalMbps   *float64         `json:"interval_mbps,omitempty"`
+	Samples        []SpeedSample    `json:"samples,omitempty"`
+	TestConfig     *SSHSpeedRequest `json:"test_config,omitempty"`
+	SenderMbps     *float64         `json:"sender_mbps,omitempty"`
+	Retransmits    *int64           `json:"retransmits,omitempty"`
+	RTTMeanMS      *float64         `json:"rtt_mean_ms,omitempty"`
+	RTTMinMS       *float64         `json:"rtt_min_ms,omitempty"`
+	RTTMaxMS       *float64         `json:"rtt_max_ms,omitempty"`
+	HTTPStatus     int              `json:"http_status"`
+	Edge           string           `json:"edge"`
+	Message        string           `json:"message"`
+}
+type SpeedSample struct {
+	Start       float64  `json:"start"`
+	End         float64  `json:"end"`
+	Mbps        float64  `json:"mbps"`
+	Bytes       int64    `json:"bytes"`
+	Retransmits *int64   `json:"retransmits,omitempty"`
+	JitterMS    *float64 `json:"jitter_ms,omitempty"`
+	LostPercent *float64 `json:"lost_percent,omitempty"`
 }
 type SpeedState struct {
 	Job      string        `json:"job"`
@@ -145,7 +170,7 @@ func (a *App) speedStatus() SpeedState {
 	a.speed.mu.Lock()
 	defer a.speed.mu.Unlock()
 	state := a.speed.state
-	if state.Running && state.Current.Status == "running" {
+	if state.Running && state.Current.Status == "running" && state.Current.Mode != "iperf3" {
 		state.Current.Seconds = float64(time.Now().UnixMilli()-state.Current.Time) / 1000
 		if state.Current.Seconds > 0 {
 			state.Current.Mbps = float64(state.Current.Bytes) * 8 / state.Current.Seconds / 1e6

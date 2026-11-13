@@ -75,7 +75,7 @@ func (a *App) handler() http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'")
 		if !a.allowed(r) {
 			http.Error(w, "仅允许配置的管理网段访问", 403)
 			return
@@ -84,7 +84,7 @@ func (a *App) handler() http.Handler {
 			a.login(w, r)
 			return
 		}
-		if r.URL.Path == "/" || r.URL.Path == "/app.js" || r.URL.Path == "/speed.js" || r.URL.Path == "/style.css" {
+		if r.URL.Path == "/" || r.URL.Path == "/app.js" || r.URL.Path == "/speed.js" || r.URL.Path == "/ssh-speed.js" || r.URL.Path == "/ssh-details.js" || r.URL.Path == "/style.css" || r.URL.Path == "/ssh-terminal.js" || r.URL.Path == "/vendor/xterm.js" || r.URL.Path == "/vendor/addon-fit.js" || r.URL.Path == "/vendor/xterm.css" {
 			if r.Method != "GET" {
 				w.WriteHeader(405)
 				return
@@ -101,9 +101,9 @@ func (a *App) handler() http.Handler {
 			switch r.URL.Path {
 			case "/":
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			case "/app.js", "/speed.js":
+			case "/app.js", "/speed.js", "/ssh-speed.js", "/ssh-details.js", "/ssh-terminal.js", "/vendor/xterm.js", "/vendor/addon-fit.js":
 				w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-			case "/style.css":
+			case "/style.css", "/vendor/xterm.css":
 				w.Header().Set("Content-Type", "text/css; charset=utf-8")
 			}
 			_, _ = w.Write(b)
@@ -121,6 +121,14 @@ func (a *App) handler() http.Handler {
 			}
 		}
 		switch r.URL.Path {
+		case "/api/ssh/terminal":
+			a.sshTerminal(w, r)
+		case "/api/speed/ssh/hosts":
+			a.sshHostsAPI(w, r)
+		case "/api/speed/ssh/check":
+			a.sshCheckAPI(w, r)
+		case "/api/speed/ssh/start":
+			a.sshStartAPI(w, r)
 		case "/api/speed/targets", "/api/speed/nodes", "/api/speed/settings", "/api/speed/start", "/api/speed/stop", "/api/speed/status", "/api/speed/history":
 			a.speedAPI(w, r)
 		case "/api/session":

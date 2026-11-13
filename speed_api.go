@@ -94,7 +94,7 @@ func (a *App) speedAPI(w http.ResponseWriter, r *http.Request) {
 			respond(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
-		items, err := a.db.speedHistory(from, to, before, r.URL.Query().Get("node_id"))
+		items, err := a.db.speedHistory(from, to, before, r.URL.Query().Get("node_id"), r.URL.Query().Get("scope"))
 		if err != nil {
 			respond(w, 500, map[string]string{"error": "读取测速历史失败"})
 			return
@@ -110,7 +110,10 @@ func (a *App) speedAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Store) saveSpeed(r *SpeedResult) error {
-	b, err := json.Marshal(r)
+	summary := *r
+	summary.Samples = nil
+	summary.IntervalMbps = nil
+	b, err := json.Marshal(summary)
 	if err != nil {
 		return err
 	}
@@ -121,15 +124,28 @@ func (s *Store) saveSpeed(r *SpeedResult) error {
 	r.ID, err = result.LastInsertId()
 	return err
 }
-func (s *Store) speedHistory(from, to, before int64, nodeID string) ([]SpeedResult, error) {
+func (s *Store) speedHistory(from, to, before int64, nodeID string, scope ...string) ([]SpeedResult, error) {
 	if before == 0 {
 		before = 1 << 62
 	}
 	query := "SELECT id,result FROM speed_results WHERE ts>=? AND ts<? AND id<?"
 	args := []any{from, to, before}
 	if nodeID != "" {
-		query += " AND json_extract(result,'$.node_id')=?"
-		args = append(args, nodeID)
+		if strings.HasPrefix(nodeID, "ssh:") {
+			query += " AND (json_extract(result,'$.node_id')=? OR json_extract(result,'$.source_host_id')=?)"
+			args = append(args, nodeID, strings.TrimPrefix(nodeID, "ssh:"))
+		} else {
+			query += " AND json_extract(result,'$.node_id')=?"
+			args = append(args, nodeID)
+		}
+	}
+	if len(scope) > 0 {
+		switch scope[0] {
+		case "ssh":
+			query += " AND json_extract(result,'$.node_id') LIKE 'ssh:%'"
+		case "proxy":
+			query += " AND json_extract(result,'$.node_id') NOT LIKE 'ssh:%'"
+		}
 	}
 	return s.querySpeed(query+" ORDER BY id DESC LIMIT 51", args...)
 }
