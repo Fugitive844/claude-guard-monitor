@@ -20,10 +20,12 @@ function openSSHTerminal(host){
   if(!event.ctrlKey||event.altKey||event.metaKey)return true;
   const key=event.key.toLowerCase();
   if(key==='v')return false;
-  if(key==='c'&&term.hasSelection()){
+  const selection=window.getSelection(),cover=document.querySelector('.terminal-privacy');
+  const selected=selection&&cover.contains(selection.anchorNode)?selection.toString():term.hasSelection()?term.getSelection():'';
+  if(key==='c'&&selected){
    if(event.type==='keydown'){
     event.preventDefault();
-    navigator.clipboard.writeText(term.getSelection()).catch(()=>{$('sshTerminalStatus').textContent='复制失败，请检查浏览器剪贴板权限'});
+    navigator.clipboard.writeText(selected).catch(()=>{$('sshTerminalStatus').textContent='复制失败，请检查浏览器剪贴板权限'});
    }
    return false;
   }

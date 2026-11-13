@@ -55,7 +55,7 @@ const ipPrivacy=(()=>{
   observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['title','placeholder','aria-label','open','value']});
  }
  const observer=new MutationObserver(refresh);
- function setVisible(value){visible=value;try{localStorage.setItem(storageKey,String(value))}catch{}refresh()}
+ function setVisible(value){visible=value;if(!visible)terminalRef?.clearSelection();try{localStorage.setItem(storageKey,String(value))}catch{}refresh()}
  function addToggle(parent){
   const label=document.createElement('label');label.className='privacy-toggle';
   const input=document.createElement('input');input.type='checkbox';input.dataset.ipToggle='';input.checked=visible;input.onchange=()=>setVisible(input.checked);
@@ -66,12 +66,35 @@ const ipPrivacy=(()=>{
  document.querySelectorAll('dialog > .panel-head,dialog > .ssh-editor-header').forEach(addToggle);
  const terminal=document.getElementById('sshTerminalScreen'),stage=document.createElement('div'),cover=document.createElement('pre');
  stage.className='terminal-stage';terminal.before(stage);stage.append(terminal,cover);
- cover.className='terminal-privacy';cover.dataset.privacyOverlay='';cover.title='地址隐藏时显示只读终端；打开显示开关后操作终端';
+ cover.className='terminal-privacy';cover.dataset.privacyOverlay='';cover.tabIndex=0;cover.title='点击输入命令；拖选文字后 Ctrl+C 复制；Ctrl+V 粘贴';
+ const focusTerminal=()=>terminalRef?.textarea?.focus({preventScroll:true});
+ let selecting=false;
+ cover.addEventListener('pointerdown',()=>{selecting=true;window.getSelection()?.removeAllRanges()});
+ cover.addEventListener('focus',()=>{if(!selecting)focusTerminal()});
+ cover.addEventListener('pointerup',()=>{selecting=false;if(!window.getSelection()?.toString())focusTerminal()});
+ cover.addEventListener('keydown',event=>{
+  if(event.ctrlKey&&event.key.toLowerCase()==='c'&&window.getSelection()?.toString())return;
+  focusTerminal();
+  if(event.key.length>1||event.ctrlKey&&event.key.toLowerCase()!=='v'||event.altKey){
+   event.preventDefault();terminalRef?.textarea?.dispatchEvent(new KeyboardEvent('keydown',{key:event.key,code:event.code,keyCode:event.keyCode,ctrlKey:event.ctrlKey,altKey:event.altKey,shiftKey:event.shiftKey,metaKey:event.metaKey,bubbles:true,cancelable:true}));
+  }
+ });
+ cover.addEventListener('wheel',event=>{if(terminalRef){event.preventDefault();terminalRef.scrollLines(Math.sign(event.deltaY)*3)}},{passive:false});
  function renderTerminal(){
   if(visible||!terminalRef)return;
   const buffer=terminalRef.buffer.active,lines=[];
   for(let y=buffer.viewportY;y<Math.min(buffer.length,buffer.viewportY+terminalRef.rows);y++)lines.push(mask(buffer.getLine(y).translateToString(true)));
-  const text=lines.join('\n');if(cover.textContent!==text)cover.textContent=text;
+  const row=buffer.baseY+buffer.cursorY-buffer.viewportY;
+  const column=row>=0&&row<lines.length?mask(buffer.getLine(buffer.baseY+buffer.cursorY).translateToString(false,0,buffer.cursorX)).length:-1;
+  const text=lines.join('\n'),signature=text+'\0'+row+':'+column;
+  if(cover.dataset.rendered!==signature){
+   cover.dataset.rendered=signature;
+   if(column>=0){
+    const before=lines.slice(0,row).join('\n')+(row?'\n':'')+lines[row].slice(0,column).padEnd(column);
+    const cursor=document.createElement('span');cursor.className='terminal-privacy-cursor';cursor.textContent=lines[row][column]||' ';
+    cover.replaceChildren(document.createTextNode(before),cursor,document.createTextNode(lines[row].slice(column+1)+(row<lines.length-1?'\n'+lines.slice(row+1).join('\n'):'')));
+   }else cover.textContent=text;
+  }
  }
  document.addEventListener('input',event=>{if(!event.target.matches('[data-ip-toggle]'))refresh()});document.addEventListener('focusin',refresh);
  window.addEventListener('storage',event=>{if(event.key===storageKey){visible=event.newValue==='true';refresh()}});
