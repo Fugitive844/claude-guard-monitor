@@ -9,7 +9,7 @@ function rememberSSHSamples(state){
  if(sshObservedJobs.has(state.job))for(const r of [...state.results||[],state.current||{}]){
   if(r.mode!=='iperf3'||!r.direction)continue;
   const key=sshSampleKey(r),old=sshSampleRounds.get(key);
-  if(r.samples?.length||old)sshSampleRounds.set(key,{...r,samples:r.samples?.length?r.samples:old.samples});
+  if(r.samples?.length||old)sshSampleRounds.set(key,{...r,temporary:state.temporary,samples:r.samples?.length?r.samples:old.samples});
  }
  $('sshSamplesOpen').disabled=!sshSampleRounds.size;
  $('sshResultSamples').disabled=![...sshSampleRounds.values()].some(r=>r.job===state.job);
@@ -33,7 +33,7 @@ function openSSHSamples(currentOnly=false){
 function renderSSHSamples(){
  const select=$('sshSampleSelect'),entries=[...sshSampleRounds.entries()].reverse();
  const keys=entries.map(([key])=>key).join('|');
- if(select.dataset.keys!==keys){select.innerHTML=entries.map(([key,r])=>`<option value="${esc(key)}">${esc(when(r.time))} · ${esc(r.protocol.toUpperCase())} · ${esc(sshFlow(r))}</option>`).join('');select.dataset.keys=keys}
+ if(select.dataset.keys!==keys){select.innerHTML=entries.map(([key,r])=>`<option value="${esc(key)}">${r.temporary?'临时 · ':''}${esc(when(r.time))} · ${esc(r.protocol.toUpperCase())} · ${esc(sshFlow(r))}</option>`).join('');select.dataset.keys=keys}
  if(!sshSampleRounds.has(sshSampleSelection))sshSampleSelection=entries[0]?.[0]||'';
  select.value=sshSampleSelection;
  const r=sshSampleRounds.get(sshSampleSelection);if(!r)return;
@@ -48,7 +48,7 @@ function renderSSHSamples(){
  const points=samples.map(s=>`${x((s.start+s.end)/2).toFixed(1)},${y(s.mbps).toFixed(1)}`).join(' ');
  $('sshSampleChart').innerHTML=`<line x1="44" y1="20" x2="44" y2="150" stroke="#cad5e2"/><line x1="44" y1="150" x2="784" y2="150" stroke="#cad5e2"/><text x="40" y="16" text-anchor="end">${max.toFixed(1)}</text><text x="40" y="153" text-anchor="end">0</text><text x="44" y="174">0 秒</text><text x="784" y="174" text-anchor="end">${end.toFixed(1)} 秒</text><polyline fill="none" stroke="${color}" stroke-width="2.5" points="${points}"/>${samples.map(s=>`<circle cx="${x((s.start+s.end)/2)}" cy="${y(s.mbps)}" r="3" fill="${color}"><title>${s.start.toFixed(2)}–${s.end.toFixed(2)} 秒：${s.mbps.toFixed(2)} Mbps</title></circle>`).join('')}`;
  const number=(value,suffix='')=>value==null?'—':Number(value).toFixed(2)+suffix;
- $('sshSampleRows').innerHTML=samples.map(s=>`<tr><td>${s.start.toFixed(2)}–${s.end.toFixed(2)} 秒</td><td class="${speedDirectionClass(r)}"><b>${s.mbps.toFixed(2)} Mbps</b></td><td>${esc(bytes(s.bytes))}</td><td>${s.retransmits??'—'}</td><td>${number(s.lost_percent,'%')}</td><td>${number(s.jitter_ms,' ms')}</td></tr>`).join('');
+ $('sshSampleRows').innerHTML=samples.map(s=>`<tr data-row-key="${esc(sshSampleSelection)}:${s.start}"><td>${s.start.toFixed(2)}–${s.end.toFixed(2)} 秒</td><td class="${speedDirectionClass(r)}"><b>${s.mbps.toFixed(2)} Mbps</b></td><td>${esc(bytes(s.bytes))}</td><td>${s.retransmits??'—'}</td><td>${number(s.lost_percent,'%')}</td><td>${number(s.jitter_ms,' ms')}</td></tr>`).join('');
 }
 $('sshSamplesOpen').onclick=()=>openSSHSamples();
 $('sshResultSamples').onclick=()=>openSSHSamples(true);

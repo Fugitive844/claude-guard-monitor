@@ -46,3 +46,54 @@ html{scrollbar-gutter:stable}html:has(#ssh dialog[open]){overflow:hidden}.ssh-ed
 .privacy-toggle{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:12px;cursor:pointer}.privacy-toggle input{width:14px;height:14px;margin:0}.privacy-field{display:grid;min-width:0}.privacy-field>input,.privacy-field>textarea,.privacy-field-cover{grid-area:1/1;min-width:0}.privacy-field-cover{align-self:center;padding:9px 11px;pointer-events:none;white-space:pre-wrap;overflow:hidden;z-index:1;color:var(--text,#162236);font-size:13px}.privacy-field.concealed>input,.privacy-field.concealed>textarea{color:transparent!important;caret-color:transparent!important;text-shadow:none!important}.terminal-stage{position:relative;min-height:0;flex:1}.terminal-privacy{display:none}.hide-addresses .terminal-privacy{display:block;position:absolute;inset:0;margin:0;padding:0;overflow:auto;white-space:pre;background:#111b2b;color:#e2e8f0;border-radius:6px;font:14px/1.2 Consolas,"Courier New",monospace}.hide-addresses #sshTerminalScreen{visibility:hidden;pointer-events:none}.hide-addresses #sshTerminalScreen textarea{visibility:visible!important;opacity:0!important;pointer-events:none}#sshHistoryRows td,#speedHistoryRows td{vertical-align:top}#sshHistoryRows td:first-child,#speedHistoryRows td:first-child{white-space:nowrap}#sshHistoryRows td:nth-last-child(-n+2),#speedHistoryRows td:nth-last-child(-n+2){min-width:220px}dialog .privacy-toggle{margin-left:auto}dialog .panel-head{flex-wrap:wrap}
 
 .terminal-privacy .xterm-rows{pointer-events:auto!important}
+
+/* Measurement panels */
+:is(#speed,#ssh,#speedHistory) {
+  --test-accent: #0e7490;
+  --test-grid: linear-gradient(90deg,#80cff009 1px,transparent 1px),
+               linear-gradient(#80cff009 1px,transparent 1px),
+               linear-gradient(112deg,#101f37 6%,#163752 74%,#104651);
+}
+:is(#speed,#ssh,#speedHistory) .panel {border-color:#cddbe5;box-shadow:0 4px 16px #213d5010}
+#speed .speed-task,
+#ssh :is(#sshTestPanel,#sshSamplesPanel,#sshHistoryPanel) > .panel-head {
+  color:#f3faff;background:var(--test-grid);background-size:20px 20px,20px 20px,auto;
+  border-top:3px solid #38c9c7;
+}
+#ssh :is(#sshTestPanel,#sshSamplesPanel,#sshHistoryPanel) > .panel-head {padding:16px 20px}
+#ssh :is(#sshTestPanel,#sshSamplesPanel,#sshHistoryPanel) > .panel-head h3 {font-size:17px;letter-spacing:.02em;color:inherit}
+#ssh :is(#sshTestPanel,#sshSamplesPanel,#sshHistoryPanel) > .panel-head :is(p,.privacy-toggle),
+#speed .speed-task :is(p,.speed-task-metrics span) {color:#ccdeea}
+#ssh :is(#sshTestPanel,#sshHistoryPanel,#sshSamplesPanel) > .panel-head .ghost,
+#speed .speed-task .secondary {color:#edf9fe;background:#ffffff12;border:1px solid #8db4c760}
+#speed .speed-task .eyebrow {color:#78e5db;letter-spacing:.12em}
+#speed .speed-task h2 {color:inherit}
+#speed .speed-task-metrics strong,#ssh .sample-summary strong {font-family:Consolas,"Microsoft YaHei",monospace;font-variant-numeric:tabular-nums}
+#speed .speed-task-metrics > div {border-color:#93bed340}
+#speed #speedRate.speed-download {color:#87d7ff!important}
+#speed #speedRate.speed-upload {color:#ffd098!important}
+#speedProgress::-webkit-progress-bar {background:#213e53}
+#speedProgress::-webkit-progress-value {background:#40d0c2}
+#sshTestForm > .timeline-filters {padding:14px;border:1px solid #dce7ef;border-radius:9px;background:#f5f9fc}
+#ssh .ssh-advanced {background:#fff;border-left:3px solid #3d849a}
+#ssh .ssh-work-footer {background:#eff5f8}
+#sshTask {border-left:3px solid var(--test-accent)}
+#ssh .sample-summary > div {background:#edf5fa;border-top:2px solid #70afc7}
+:is(#speed,#ssh,#speedHistory) th {background:#eaf1f6;color:#34556c}
+:is(#speed,#ssh,#speedHistory) tbody tr:where(:nth-child(even of [data-row-key])) > td {background:#eff4f8}
+:is(#speed,#ssh,#speedHistory) tbody tr[data-row-key]:hover > td {background:#e6f1f6}
+#speed #speedNodeRows tr:has([data-speed-select]:checked) > td {background:#d5ebf4}
+#speed #speedNodeRows tr:has([data-speed-select]:checked) > td:first-child {box-shadow:inset 3px 0 #14819c}
+:is(#speed,#ssh,#speedHistory) tbody tr[data-row-key] > td.test-cell-selected,
+#speed #speedNodeRows tr[data-row-key] > td.test-cell-selected {background:#b6dfe9;box-shadow:inset 0 0 0 2px #147d96}
+#speed .speed-group td {background:#dfeaf2}
+.test-actions {display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.temporary {padding:6px 12px;min-height:34px;border:1px solid #80b9c5;border-radius:6px;background:#edf9fa;color:#075e70;font-size:13px;font-weight:600;white-space:nowrap}
+.temporary:hover:enabled {background:#d3eff1;border-color:#368d9b}
+@media(max-width:1200px){.speed-list-controls > .test-actions{grid-column:3;grid-row:2}}
+@media(max-width:720px){
+  .speed-list-controls > .test-actions{grid-column:1/-1;grid-row:3}
+  .test-actions > button {flex:1}
+  #ssh :is(#sshTestPanel,#sshSamplesPanel,#sshHistoryPanel) > .panel-head{padding:12px}
+  #sshTestForm > .timeline-filters{padding:10px}
+}

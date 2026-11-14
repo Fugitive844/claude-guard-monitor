@@ -70,3 +70,30 @@ func TestSpeedHistoryGroupsSeparatePathsAndMissingJobs(t *testing.T) {
 		t.Fatalf("source filter=%+v error=%v", groups, err)
 	}
 }
+
+func TestTemporarySpeedResultsStayInJob(t *testing.T) {
+	db, err := openStore(filepath.Join(t.TempDir(), "temporary.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	service := &SpeedService{app: &App{db: db}}
+	for _, node := range []string{"proxy", "ssh:host"} {
+		r := SpeedResult{NodeID: node, Job: "saved", Time: 1, Direction: "download", Status: "complete"}
+		service.finishResult(r, false)
+		for _, status := range []string{"complete", "cancelled", "error"} {
+			r.Job, r.Time, r.Status = "temporary", 2, status
+			service.finishResult(r, true)
+			if current := service.state.Current; current.ID != 0 || current.Status != status || current.Job != r.Job {
+				t.Fatalf("unexpected temporary result: %+v", current)
+			}
+		}
+		rows, err := db.speedHistory(0, 10, 0, node)
+		if err != nil || len(rows) != 1 || rows[0].Job != "saved" {
+			t.Fatalf("%s history: rows=%v err=%v", node, rows, err)
+		}
+	}
+	if service.state.Done != 8 || len(service.state.Results) != 8 {
+		t.Fatalf("in-memory results: done=%d rows=%d", service.state.Done, len(service.state.Results))
+	}
+}

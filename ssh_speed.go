@@ -18,6 +18,7 @@ import (
 )
 
 type SSHSpeedRequest struct {
+	Temporary    bool   `json:"temporary,omitempty"`
 	HostID       string `json:"host_id"`
 	SourceHostID string `json:"source_host_id,omitempty"`
 	Mode         string `json:"mode"`
@@ -167,7 +168,7 @@ func (s *SpeedService) startSSH(req SSHSpeedRequest) error {
 	}
 	ctx, cancel := context.WithCancel(s.app.ctx)
 	s.cancel = cancel
-	s.state = SpeedState{Job: randomToken()[:16], Running: true, Started: time.Now().UnixMilli(), Total: len(directions) * len(protocols), Current: SpeedResult{NodeID: "ssh:" + host.ID, NodeName: host.Name, Status: "starting", Mode: req.Mode}}
+	s.state = SpeedState{Temporary: req.Temporary, Job: randomToken()[:16], Running: true, Started: time.Now().UnixMilli(), Total: len(directions) * len(protocols), Current: SpeedResult{NodeID: "ssh:" + host.ID, NodeName: host.Name, Status: "starting", Mode: req.Mode}}
 	s.state.Current.SourceHostID, s.state.Current.SourceHostName = source.ID, source.Name
 	if req.Mode == "iperf3" {
 		s.state.Current.TestConfig = &req
@@ -268,16 +269,7 @@ func (s *SpeedService) runSSH(ctx context.Context, host, source SSHHost, req SSH
 			if req.Mode == "check" || req.Mode == "install" {
 				r.Seconds = float64(time.Now().UnixMilli()-r.Time) / 1000
 			}
-			if err := s.app.db.saveSpeed(&r); err != nil {
-				s.mu.Lock()
-				s.state.Error = "测速记录保存失败"
-				s.mu.Unlock()
-			}
-			s.mu.Lock()
-			s.state.Current = r
-			s.state.Results = append(s.state.Results, r)
-			s.state.Done++
-			s.mu.Unlock()
+			s.finishResult(r, req.Temporary)
 		}
 	}
 }

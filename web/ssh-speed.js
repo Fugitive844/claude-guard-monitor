@@ -29,12 +29,12 @@ function renderSSHHosts(){
  const query=$('sshSearch').value.trim().toLowerCase(),status=$('sshCredentialFilter').value;
  const hosts=sshHosts.filter(h=>(!status||(status==='ready')===!!h.has_secret)&&`${h.name} ${h.host} ${h.port} ${h.username}`.toLowerCase().includes(query));
  $('sshHostCount').textContent=`${hosts.length} / ${sshHosts.length} 台主机 · ${sshHosts.filter(h=>!h.has_secret).length} 台待补凭据`;
- $('sshHostRows').innerHTML=hosts.length?hosts.map(h=>`<tr><td class="speed-name">${esc(h.name)}</td><td>${esc(h.host)}</td><td data-ssh-port>${h.port}</td><td>${esc(h.username)}</td><td>${h.auth==='key'?'私钥':'密码'}</td><td><span class="badge ${h.has_secret?'':'muted'}">${h.has_secret?'已配置':h.auth==='key'?'待补私钥':'待补密码'}</span></td><td class="ssh-row-actions"><button class="secondary" data-ssh-terminal="${esc(h.id)}">终端</button><button class="secondary" data-ssh-speed="${esc(h.id)}">测试</button><button class="ghost" data-ssh-edit="${esc(h.id)}">${h.has_secret?'编辑':'补充凭据'}</button><select data-ssh-more="${esc(h.id)}" aria-label="${esc(h.name)} 更多操作"><option value="">更多…</option><option value="check" ${h.has_secret?'':'disabled'}>检查连接</option><option value="install" ${h.has_secret?'':'disabled'}>安装 iperf3</option><option value="history">测试记录</option><option value="delete">删除主机</option></select></td></tr>`).join(''):'<tr><td colspan="7" class="empty">没有匹配的 SSH 主机</td></tr>';
+ $('sshHostRows').innerHTML=hosts.length?hosts.map(h=>`<tr data-row-key="${esc(h.id)}"><td class="speed-name">${esc(h.name)}</td><td>${esc(h.host)}</td><td data-ssh-port>${h.port}</td><td>${esc(h.username)}</td><td>${h.auth==='key'?'私钥':'密码'}</td><td><span class="badge ${h.has_secret?'':'muted'}">${h.has_secret?'已配置':h.auth==='key'?'待补私钥':'待补密码'}</span></td><td class="ssh-row-actions"><button class="secondary" data-ssh-terminal="${esc(h.id)}">终端</button><button class="secondary" data-ssh-speed="${esc(h.id)}">测试</button><button class="ghost" data-ssh-edit="${esc(h.id)}">${h.has_secret?'编辑':'补充凭据'}</button><select data-ssh-more="${esc(h.id)}" aria-label="${esc(h.name)} 更多操作"><option value="">更多…</option><option value="check" ${h.has_secret?'':'disabled'}>检查连接</option><option value="install" ${h.has_secret?'':'disabled'}>安装 iperf3</option><option value="history">测试记录</option><option value="delete">删除主机</option></select></td></tr>`).join(''):'<tr><td colspan="7" class="empty">没有匹配的 SSH 主机</td></tr>';
  renderSSHButtons();
 }
 function renderSSHButtons(){
  const selected=sshHosts.find(h=>h.id===$('sshHost').value),busy=!!speedCurrent.running,peer=$('sshLink').value==='peer';
- $('sshStart').disabled=!selected?.has_secret||busy||(peer&&(!$('sshSourceHost').value||$('sshSourceHost').value===selected?.id));
+ $('sshTemporary').disabled=$('sshStart').disabled=!selected?.has_secret||busy||(peer&&(!$('sshSourceHost').value||$('sshSourceHost').value===selected?.id));
  $('sshTestForm').querySelectorAll('input,select').forEach(el=>el.disabled=busy);
  $('sshHostForm').querySelector('button[type="submit"]').disabled=busy||sshSaving;
  $('sshAdd').disabled=busy;
@@ -45,7 +45,7 @@ function renderSSHButtons(){
  $('sshTaskView').disabled=!isSSH;$('sshTaskView').textContent=isSSH&&busy?'查看测试进度':'查看测试任务';
  $('sshTask').hidden=!isSSH&&!busy;
  if(busy&&!isSSH)$('sshTaskDetail').textContent='代理测试正在运行，完成后可开始 SSH 测试。';
- if(isSSH)$('sshTaskDetail').textContent=`${current.source_host_name?current.source_host_name+' ↔ ':''}${current.node_name||''} · ${speedResultDirection(current)||'准备连接'} · ${speedCurrent.stopping?'正在停止':speedLabel[current.status]||'准备中'} · ${speedCurrent.done||0}/${speedCurrent.total||0}${current.message?' · '+current.message:''}`;
+ if(isSSH)$('sshTaskDetail').textContent=`${speedCurrent.temporary?'临时测速 · 不写入历史 · ':''}${current.source_host_name?current.source_host_name+' ↔ ':''}${current.node_name||''} · ${speedResultDirection(current)||'准备连接'} · ${speedCurrent.stopping?'正在停止':speedLabel[current.status]||'准备中'} · ${speedCurrent.done||0}/${speedCurrent.total||0}${current.message?' · '+current.message:''}`;
  $('sshTaskStop').hidden=!isSSH;
  $('sshTaskStop').disabled=!busy||speedCurrent.stopping;
  renderSSHResults();
@@ -155,19 +155,19 @@ async function sshHostAction(action,id){
  }catch(e){if($('sshTestPanel').open)showSSHTestError(e);else toast(e.message)}
 }
 function updateSSHTestTitle(){const host=sshHosts.find(h=>h.id===$('sshHost').value);$('sshTestTitle').textContent=host?'SSH 测试 · '+host.name+' · '+sshAddress(host):'SSH 主机直连测速'}
-async function startSSH(mode,hostID=$('sshHost').value){
+async function startSSH(mode,hostID=$('sshHost').value,temporary=false){
  $('sshTestError').hidden=true;
- const req={host_id:hostID,source_host_id:mode==='iperf3'&&$('sshLink').value==='peer'?$('sshSourceHost').value:'',mode,protocol:$('sshProtocol').value,direction:$('sshDirection').value,port:Number($('sshTestPort').value),seconds:Number($('sshSeconds').value),bandwidth:Number($('sshBandwidth').value),parallel:Number($('sshParallel').value),omit:Number($('sshOmit').value),tcp_bandwidth:Number($('sshTCPBandwidth').value),udp_length:Number($('sshUDPLength').value)};
+ const req={temporary,host_id:hostID,source_host_id:mode==='iperf3'&&$('sshLink').value==='peer'?$('sshSourceHost').value:'',mode,protocol:$('sshProtocol').value,direction:$('sshDirection').value,port:Number($('sshTestPort').value),seconds:Number($('sshSeconds').value),bandwidth:Number($('sshBandwidth').value),parallel:Number($('sshParallel').value),omit:Number($('sshOmit').value),tcp_bandwidth:Number($('sshTCPBandwidth').value),udp_length:Number($('sshUDPLength').value)};
  renderSpeed(await api('/api/speed/ssh/start',{method:'POST',body:JSON.stringify(req)}));
 }
 function showSSHTestError(e){$('sshTestError').textContent=e.message;$('sshTestError').hidden=false}
-$('sshTestForm').onsubmit=event=>{event.preventDefault();startSSH($('sshMode').value).catch(showSSHTestError)};
+$('sshTestForm').onsubmit=event=>{event.preventDefault();startSSH($('sshMode').value,$('sshHost').value,event.submitter===$('sshTemporary')).catch(showSSHTestError)};
 
 function renderSSHResults(){
  const hostID='ssh:'+$('sshHost').value;
  const results=(speedCurrent.results||[]).filter(r=>r.node_id===hostID);
  const current=speedCurrent.current;
- if(current?.node_id===hostID&&current.direction&&!results.some(r=>r.id&&r.id===current.id))results.push(current);
+ if(current?.node_id===hostID&&current.direction&&!results.some(r=>sshSampleKey(r)===sshSampleKey(current)))results.push(current);
  $('sshResultsPanel').hidden=!results.length;
  const groups=new Map();
  for(const r of results){const key=[r.source_host_id||'',r.node_id,r.mode,r.protocol].join('/');if(!groups.has(key))groups.set(key,{host:r});groups.get(key)[r.direction]=r}
@@ -177,6 +177,6 @@ function renderSSHResults(){
  const anchor=results[0];
  $('sshResultDown').innerHTML=(peer?'↓ 源主机下载':'↓ 下载')+(anchor?`<small>${esc(sshFlow({...anchor,direction:'download'}))}</small>`:'');$('sshResultUp').innerHTML=(peer?'↑ 源主机上传':'↑ 上传')+(anchor?`<small>${esc(sshFlow({...anchor,direction:'upload'}))}</small>`:'');
  const cell=(r,historical=false)=>r?speedCell(r,false,historical)+`<small>${esc(bytes(r.bytes))} · ${Number(r.seconds||0).toFixed(2)} 秒</small>`:'—';
- $('sshResultRows').innerHTML=[...groups.values()].map(g=>{const r=g.host,operation=g.check||g.install;return `<tr><td>${esc(r.source_host_name?r.source_host_name+' ↔ '+r.node_name:r.node_name)}<small>${esc(r.source_host_id?r.target.split(' · ').slice(1).join(' · '):r.target)}</small></td>${operation?`<td colspan="2">${esc(speedResultDirection(operation))} · ${cell(operation)}</td>`:`<td>${resultCell(g,'download')}</td><td>${resultCell(g,'upload')}</td>`}</tr>`}).join('');
+ $('sshResultRows').innerHTML=[...groups.values()].map(g=>{const r=g.host,operation=g.check||g.install;return `<tr data-row-key="${esc(JSON.stringify([r.source_host_id,r.node_id,r.mode,r.protocol]))}"><td>${esc(r.source_host_name?r.source_host_name+' ↔ '+r.node_name:r.node_name)}<small>${esc(r.source_host_id?r.target.split(' · ').slice(1).join(' · '):r.target)}</small></td>${operation?`<td colspan="2">${esc(speedResultDirection(operation))} · ${cell(operation)}</td>`:`<td>${resultCell(g,'download')}</td><td>${resultCell(g,'upload')}</td>`}</tr>`}).join('');
 }
 function renderSSHHistoryNodes(){const selected=$('sshHistoryNode').value;$('sshHistoryNode').innerHTML='<option value="">全部主机</option>'+sshHosts.map(h=>`<option value="ssh:${esc(h.id)}">${esc(h.name)}</option>`).join('');$('sshHistoryNode').value=sshHosts.some(h=>'ssh:'+h.id===selected)?selected:''}
