@@ -84,8 +84,9 @@ html{scrollbar-gutter:stable}html:has(#ssh dialog[open]){overflow:hidden}.ssh-ed
 :is(#speed,#ssh,#speedHistory) tbody tr[data-row-key]:hover > td {background:#e6f1f6}
 #speed #speedNodeRows tr:has([data-speed-select]:checked) > td {background:#d5ebf4}
 #speed #speedNodeRows tr:has([data-speed-select]:checked) > td:first-child {box-shadow:inset 3px 0 #14819c}
-:is(#speed,#ssh,#speedHistory) tbody tr[data-row-key] > td.test-cell-selected,
-#speed #speedNodeRows tr[data-row-key] > td.test-cell-selected {background:#b6dfe9;box-shadow:inset 0 0 0 2px #147d96}
+:is(#speed,#ssh,#speedHistory) tbody tr[data-row-key].test-row-selected > td,
+#speed #speedNodeRows tr.test-row-selected[data-row-key] > td {background:#b6dfe9}
+:is(#speed,#ssh,#speedHistory) tbody tr.test-row-selected > td:first-child {box-shadow:inset 3px 0 #147d96}
 #speed .speed-group td {background:#dfeaf2}
 .test-actions {display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .temporary {padding:6px 12px;min-height:34px;border:1px solid #80b9c5;border-radius:6px;background:#edf9fa;color:#075e70;font-size:13px;font-weight:600;white-space:nowrap}

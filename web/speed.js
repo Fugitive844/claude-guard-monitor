@@ -180,35 +180,34 @@ return load;
 const loadSpeedHistory=createSpeedHistory('speedHistory','proxy');
 const loadSSHHistory=createSpeedHistory('sshHistory','ssh');
 
-// Keep the selected record and column highlighted across filtering and live updates.
+// Keep the selected record highlighted when a table is refreshed or reordered.
 for(const body of document.querySelectorAll('#speed tbody,#ssh tbody,#speedHistory tbody')){
  const table=body.closest('table');
- let selected=null;
- function selectCell(cell){
-  body.querySelector('.test-cell-selected')?.classList.remove('test-cell-selected');
-  selected={key:cell.parentElement.dataset.rowKey,column:cell.cellIndex};
-  cell.classList.add('test-cell-selected');
+ let selectedKey=null;
+ function selectRow(row){
+  body.querySelector('.test-row-selected')?.classList.remove('test-row-selected');
+  selectedKey=row.dataset.rowKey;
+  row.classList.add('test-row-selected');
+ }
+ function selectEventRow(event){
+  const row=event.target.closest('tr[data-row-key]');
+  if(row&&body.contains(row))selectRow(row);
  }
  table.tabIndex=0;
- table.addEventListener('click',event=>{
-  const cell=event.target.closest('tr[data-row-key] > td');
-  if(cell&&body.contains(cell))selectCell(cell);
- });
+ table.addEventListener('click',selectEventRow,true);
+ table.addEventListener('change',selectEventRow,true);
  table.addEventListener('keydown',event=>{
-  if(event.target!==table||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;
+  if(event.target!==table||!['ArrowUp','ArrowDown'].includes(event.key))return;
   const rows=[...body.querySelectorAll('tr[data-row-key]')];
   if(!rows.length)return;
   event.preventDefault();
-  const cell=body.querySelector('.test-cell-selected');
-  const dy=Number(event.key==='ArrowDown')-Number(event.key==='ArrowUp');
-  const dx=Number(event.key==='ArrowRight')-Number(event.key==='ArrowLeft');
-  const row=cell?rows[Math.max(0,Math.min(rows.length-1,rows.indexOf(cell.parentElement)+dy))]:rows[0];
-  const next=row.cells[cell?Math.max(0,Math.min(row.cells.length-1,cell.cellIndex+dx)):0];
-  selectCell(next);next.scrollIntoView({block:'nearest',inline:'nearest'});
+  const index=rows.findIndex(row=>row.dataset.rowKey===selectedKey);
+  const next=index<0?0:Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowDown'?1:-1)));
+  selectRow(rows[next]);rows[next].scrollIntoView({block:'nearest',inline:'nearest'});
  });
  new MutationObserver(()=>{
-  if(!selected)return;
-  const row=[...body.rows].find(row=>row.dataset.rowKey===selected.key);
-  row?.cells[selected.column]?.classList.add('test-cell-selected');
+  if(selectedKey===null)return;
+  const row=[...body.rows].find(row=>row.dataset.rowKey===selectedKey);
+  row?.classList.add('test-row-selected');
  }).observe(body,{childList:true});
 }
