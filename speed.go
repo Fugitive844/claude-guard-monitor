@@ -75,6 +75,7 @@ type SpeedNode struct {
 	Reason    string `json:"reason"`
 }
 type SpeedRequest struct {
+	Temporary    bool     `json:"temporary,omitempty"`
 	Nodes        []string `json:"nodes"`
 	Direction    string   `json:"direction"`
 	Target       string   `json:"target"`
@@ -125,16 +126,17 @@ type SpeedSample struct {
 	Packets     *int64   `json:"packets,omitempty"`
 }
 type SpeedState struct {
-	Job      string        `json:"job"`
-	Running  bool          `json:"running"`
-	Stopping bool          `json:"stopping"`
-	Started  int64         `json:"started"`
-	Finished int64         `json:"finished"`
-	Total    int           `json:"total"`
-	Done     int           `json:"done"`
-	Current  SpeedResult   `json:"current"`
-	Results  []SpeedResult `json:"results,omitempty"`
-	Error    string        `json:"error,omitempty"`
+	Temporary bool          `json:"temporary,omitempty"`
+	Job       string        `json:"job"`
+	Running   bool          `json:"running"`
+	Stopping  bool          `json:"stopping"`
+	Started   int64         `json:"started"`
+	Finished  int64         `json:"finished"`
+	Total     int           `json:"total"`
+	Done      int           `json:"done"`
+	Current   SpeedResult   `json:"current"`
+	Results   []SpeedResult `json:"results,omitempty"`
+	Error     string        `json:"error,omitempty"`
 }
 type SpeedService struct {
 	app      *App
@@ -267,13 +269,13 @@ func (s *SpeedService) start(req SpeedRequest, available []SpeedNode) error {
 	}
 	ctx, cancel := context.WithCancel(s.app.ctx)
 	s.cancel = cancel
-	s.state = SpeedState{Job: randomToken()[:16], Running: true, Started: time.Now().UnixMilli(), Total: len(selected) * len(directions), Current: SpeedResult{NodeID: selected[0].ID, NodeName: selected[0].Name, Status: "starting"}}
+	s.state = SpeedState{Temporary: req.Temporary, Job: randomToken()[:16], Running: true, Started: time.Now().UnixMilli(), Total: len(selected) * len(directions), Current: SpeedResult{NodeID: selected[0].ID, NodeName: selected[0].Name, Status: "starting"}}
 	s.wg.Add(1)
-	go func() { defer s.wg.Done(); defer cancel(); s.run(ctx, selected, directions, cfg) }()
+	go func() { defer s.wg.Done(); defer cancel(); s.run(ctx, selected, directions, cfg, req.Temporary) }()
 	return nil
 }
 
-func (s *SpeedService) run(ctx context.Context, nodes []SpeedNode, directions []string, cfg SpeedSettings) {
+func (s *SpeedService) run(ctx context.Context, nodes []SpeedNode, directions []string, cfg SpeedSettings, temporary bool) {
 	defer func() {
 		s.mu.Lock()
 		s.state.Running = false
@@ -319,21 +321,28 @@ func (s *SpeedService) run(ctx context.Context, nodes []SpeedNode, directions []
 			} else {
 				r = measureSpeed(ctx, client, sampleCfg, r, update)
 			}
-			if e := s.app.db.saveSpeed(&r); e != nil {
-				s.mu.Lock()
-				s.state.Error = "测速记录保存失败"
-				s.mu.Unlock()
-			}
-			s.mu.Lock()
-			s.state.Current = r
-			s.state.Results = append(s.state.Results, r)
-			s.state.Done++
-			s.mu.Unlock()
+			s.finishResult(r, temporary)
 		}
 		if closeProxy != nil {
 			closeProxy()
 		}
 	}
+}
+
+// finishResult publishes every result to the active job, including unsaved measurements.
+func (s *SpeedService) finishResult(r SpeedResult, temporary bool) {
+	var err error
+	if !temporary {
+		err = s.app.db.saveSpeed(&r)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.state.Error = "测速记录保存失败"
+	}
+	s.state.Current = r
+	s.state.Results = append(s.state.Results, r)
+	s.state.Done++
 }
 
 func temporarySpeedProxy(ctx context.Context, node SpeedNode) (*http.Client, func(), error) {
